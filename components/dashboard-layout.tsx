@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { type ReactNode, useState } from "react"
+import { type ReactNode} from "react"
 import { Bell, ChevronDown, LogOut, Search, User } from "lucide-react"
 import { usePathname } from "next/navigation"
 import Link from "next/link"
@@ -44,7 +44,7 @@ interface DashboardLayoutProps {
 export function DashboardLayout({ children, navItems, userRole, userName, userAvatar }: DashboardLayoutProps) {
   const pathname = usePathname()
 
-  const [notifications, ] = useState(3)
+const notifications = 3
   const { isMobile } = useSidebar()
 
   return (

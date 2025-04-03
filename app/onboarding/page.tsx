@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { useUser } from '@clerk/clerk-react'
 import SetRole from "../../actions/set-role";
 import { Role } from "@prisma/client";
 import { useIsClient } from "../hooks/useIsClient";

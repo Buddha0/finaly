@@ -8,14 +8,14 @@ import { Dialog, DialogContent } from "@/components/ui/dialog"
 import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { CalendarIcon, Loader2 } from "lucide-react"
+import { CalendarIcon } from "lucide-react"
 import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 
 import { DialogTitle } from "@radix-ui/react-dialog"
-import Image from "next/image"
+
 
 interface TaskFormValues {
   title: string
@@ -30,10 +30,9 @@ interface TaskFormProps {
 }
 
 export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
- 
 
-  const [imagePreviewUrls, setImagePreviewUrls] = useState<string[]>([])
-  const [isSubmitting, setIsSubmitting] = useState(false)
+
+
 
   const form = useForm<TaskFormValues>({
     defaultValues: {
@@ -42,22 +41,10 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
     },
   })
 
-  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files
-    if (files) {
-      const newPreviewUrls = Array.from(files).map((file) => URL.createObjectURL(file))
-      setImagePreviewUrls(newPreviewUrls)
-    }
-  }
+
 
   const onSubmit = async (data: TaskFormValues) => {
-    setIsSubmitting(true)
-    await new Promise((resolve) => setTimeout(resolve, 2000)) // Simulate API call
-    console.log(data)
-    setIsSubmitting(false)
-    form.reset()
-    setImagePreviewUrls([])
-    setIsOpen(false) // Close dialog after submission
+   console.log(data)
   }
 
   const [isMounted, setIsMounted] = useState(false);
@@ -73,10 +60,10 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
   return (
     <Dialog open={open} onOpenChange={setIsOpen}>
       <DialogContent className="w-[95%] md:max-w-xl rounded-sm max-h-[550px] overflow-hidden overflow-y-scroll">
-     
-    
+
+
         <DialogTitle className="hidden"></DialogTitle>
-       
+
 
         <Card className="w-full mx-auto border-0 shadow-none">
           <CardHeader className="px-0 pt-0">
@@ -107,7 +94,7 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
                     <FormItem>
                       <FormLabel>Description</FormLabel>
                       <FormControl>
-                       
+
                       </FormControl>
                       <FormDescription>
                         Use the toolbar to format your text with bold, headings, lists, and more
@@ -152,9 +139,9 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
                     </FormItem>
                   )}
                 />
-              
 
-                <FormField
+
+                {/* <FormField
                   control={form.control}
                   name="images"
                   render={({ field: { onChange, ...field } }) => (
@@ -167,10 +154,10 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
                             accept="image/*"
                             multiple
                             onChange={(e) => {
-                              handleImageChange(e)
-                              onChange(e.target.files)
+                              handleImageChange(e);
+                              onChange(e.target.files); // pass FileList directly to onChange
                             }}
-                            {...field}
+                            {...field} // field should not include value for file input
                           />
                           {imagePreviewUrls.length > 0 && (
                             <div className="grid grid-cols-2 gap-1 md:grid-cols-3">
@@ -192,12 +179,9 @@ export default function TaskForm({ open, setIsOpen }: TaskFormProps) {
                       <FormMessage />
                     </FormItem>
                   )}
-                />
+                /> */}
 
-                <Button type="submit" className="w-full" disabled={isSubmitting}>
-                  {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                  {isSubmitting ? "Creating Task..." : "Create Task"}
-                </Button>
+               <Button>Create Task</Button>
               </form>
             </Form>
           </CardContent>
