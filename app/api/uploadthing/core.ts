@@ -1,6 +1,6 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
-import { auth } from "@clerk/nextjs/server"; // Clerk's auth function
+import { getAuth } from "@clerk/nextjs/server";
 
 const f = createUploadthing();
 
@@ -13,21 +13,18 @@ export const ourFileRouter = {
     text: { maxFileSize: "8MB", maxFileCount: 10 },
     video: { maxFileSize: "1GB", maxFileCount: 2 },
   })
-    // Set permissions and file types for this FileRoute
-    .middleware(async () => {
-      // This code runs on your server before upload
-      const { userId } = await auth(); // Use Clerk's auth function to get user info
+   
+    .middleware(async (req) => {
+     const { userId } = getAuth(req);
 
-      // If no userId, user is not authenticated
-      if (!userId) throw new UploadThingError("Unauthorized");
+     if (!userId) throw new UploadThingError("Unauthorized");
 
-      // Return userId as metadata, accessible in onUploadComplete
-      return { userId };
+     return { userId };
     })
     .onUploadComplete(async ({ metadata, file }) => {
       // This code RUNS ON YOUR SERVER after upload
       console.log("Upload complete for userId:", metadata.userId);
-      console.log("File URL:", file.url);
+      console.log("file url", file.ufsUrl);
 
       // Return metadata to client-side callback
       return { uploadedBy: metadata.userId };
@@ -35,23 +32,23 @@ export const ourFileRouter = {
     
   // Special route for citizenship ID uploads with stricter limits
   citizenshipUploader: f({
-    image: { maxFileSize: "4MB", maxFileCount: 1 },
+    image: { maxFileSize: "4MB", maxFileCount: 2 },
   })
-    .middleware(async () => {
-      const { userId } = await auth();
-      
+    .middleware(async (req) => {
+      const { userId } = getAuth(req);
+
       if (!userId) throw new UploadThingError("Unauthorized");
-      
+ 
       return { userId };
     })
     .onUploadComplete(async ({ metadata, file }) => {
       console.log("Citizenship ID uploaded for userId:", metadata.userId);
-      console.log("File URL:", file.url);
+      console.log("file url", file.ufsUrl);
       
       // Return the file URL to be saved in the database
       return { 
         uploadedBy: metadata.userId,
-        citizenshipPhotoUrl: file.url 
+        citizenshipPhotoUrl: file.ufsUrl
       };
     }),
 } satisfies FileRouter;

@@ -18,21 +18,25 @@ export default clerkMiddleware(async (auth, req) => {
   // 🚀 Handle API authentication routes first
   if (isApiAuthRoute(req)) return null;
 
-  // 🚀 Redirect unauthenticated users **before rendering**
-  if (!userId) {
-    if (isAuthRoute(req)) return null; // Allow sign-in/sign-up
-    if (isPublicRoute(req)) return null; // Allow public routes
+  // 🚀 Handle public routes
+  if (isPublicRoute(req)) return null;
 
-    console.log("Redirecting to Sign In due to missing userId");
-    return redirectToSignIn(); // Redirect before hydration happens
-  }
-
-  // 🚀 Prevent logged-in users from accessing auth pages
+  // 🚀 Handle auth routes (sign-in/sign-up)
   if (isAuthRoute(req)) {
-    return NextResponse.redirect(new URL("/", req.url));
+    // If user is already logged in, redirect to home
+    if (userId) {
+      return NextResponse.redirect(new URL("/", req.url));
+    }
+    return null;
   }
 
-  // 🚀 Ensure session metadata exists
+  // 🚀 If user is not logged in, redirect to sign in
+  if (!userId) {
+    console.log("Redirecting to Sign In due to missing userId");
+    return redirectToSignIn();
+  }
+
+  // 🚀 Only check onboarding status for logged-in users
   const metadata = sessionClaims?.metadata as UserMetadata || {};
   const onboardingCompleted = metadata.onboardingCompleted === true;
   const userRole = metadata.role || "POSTER";
