@@ -1,0 +1,59 @@
+import { createUploadthing, type FileRouter } from "uploadthing/next";
+import { UploadThingError } from "uploadthing/server";
+import { auth } from "@clerk/nextjs/server"; // Clerk's auth function
+
+const f = createUploadthing();
+
+// FileRouter for your app, can contain multiple FileRoutes
+export const ourFileRouter = {
+  // Define as many FileRoutes as you like, each with a unique routeSlug
+  imageUploader: f({
+    image: { maxFileSize: "4MB", maxFileCount: 5 },
+    pdf: { maxFileSize: "8MB", maxFileCount: 3 },
+    text: { maxFileSize: "8MB", maxFileCount: 10 },
+    video: { maxFileSize: "1GB", maxFileCount: 2 },
+  })
+    // Set permissions and file types for this FileRoute
+    .middleware(async () => {
+      // This code runs on your server before upload
+      const { userId } = await auth(); // Use Clerk's auth function to get user info
+
+      // If no userId, user is not authenticated
+      if (!userId) throw new UploadThingError("Unauthorized");
+
+      // Return userId as metadata, accessible in onUploadComplete
+      return { userId };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      // This code RUNS ON YOUR SERVER after upload
+      console.log("Upload complete for userId:", metadata.userId);
+      console.log("File URL:", file.url);
+
+      // Return metadata to client-side callback
+      return { uploadedBy: metadata.userId };
+    }),
+    
+  // Special route for citizenship ID uploads with stricter limits
+  citizenshipUploader: f({
+    image: { maxFileSize: "4MB", maxFileCount: 1 },
+  })
+    .middleware(async () => {
+      const { userId } = await auth();
+      
+      if (!userId) throw new UploadThingError("Unauthorized");
+      
+      return { userId };
+    })
+    .onUploadComplete(async ({ metadata, file }) => {
+      console.log("Citizenship ID uploaded for userId:", metadata.userId);
+      console.log("File URL:", file.url);
+      
+      // Return the file URL to be saved in the database
+      return { 
+        uploadedBy: metadata.userId,
+        citizenshipPhotoUrl: file.url 
+      };
+    }),
+} satisfies FileRouter;
+
+export type OurFileRouter = typeof ourFileRouter;

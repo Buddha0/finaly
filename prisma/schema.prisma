@@ -1,0 +1,147 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+// prisma/schema.prisma
+datasource db {
+  provider  = "postgresql"
+  url  	    = env("DATABASE_URL")
+  // uncomment next line if you use Prisma <5.10
+  // directUrl = env("DATABASE_URL_UNPOOLED")
+}
+enum Role {
+  POSTER
+  DOER
+  ADMIN
+}
+
+enum AssignmentStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  UNDER_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+model User {
+  id                String   @id
+  name              String?
+  email             String?  @unique
+  image             String?
+  role              Role     @default(DOER)
+  bio               String?  @db.Text
+  skills            String?  @db.Text
+  rating            Float?   @default(0)
+  citizenshipPhoto  String?  
+  verificationStatus String?  @default("pending") // pending, verified, rejected
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relationships
+  postedAssignments   Assignment[]    @relation("PostedAssignments")
+  acceptedAssignments Assignment[]    @relation("AcceptedAssignments")
+  submissions         Submission[]
+  reviews             Review[]
+  receivedReviews     Review[]        @relation("ReceivedReviews")
+  messages            Message[]       @relation("SentMessages")
+  receivedMessages    Message[]       @relation("ReceivedMessages")
+}
+
+model Assignment {
+  id            String           @id @default(cuid())
+  title         String
+  description   String           @db.Text
+  category      String
+  budget        Float
+  deadline      DateTime
+  priority      String
+  attachments   Json?
+  additional    String?          @db.Text
+  status        AssignmentStatus @default(OPEN)
+  
+  // Relationships
+  posterId      String
+  poster        User             @relation("PostedAssignments", fields: [posterId], references: [id])
+  
+  doerId        String?
+  doer          User?            @relation("AcceptedAssignments", fields: [doerId], references: [id])
+  
+  submissions   Submission[]
+  reviews       Review[]
+  messages      Message[]
+  
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  @@index([posterId])
+  @@index([doerId])
+}
+
+model Submission {
+  id            String    @id @default(cuid())
+  content       String    @db.Text
+  attachments   Json?
+  status        String    @default("pending") // pending, accepted, rejected
+  feedback      String?   @db.Text
+  
+  // Relationships
+  assignmentId  String
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  
+  userId        String
+  user          User       @relation(fields: [userId], references: [id])
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([assignmentId])
+  @@index([userId])
+}
+
+model Review {
+  id            String    @id @default(cuid())
+  rating        Float
+  comment       String?   @db.Text
+  
+  // Relationships
+  assignmentId  String
+  assignment    Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  
+  reviewerId    String
+  reviewer      User       @relation(fields: [reviewerId], references: [id])
+  
+  receiverId    String
+  receiver      User       @relation("ReceivedReviews", fields: [receiverId], references: [id])
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([assignmentId])
+  @@index([reviewerId])
+  @@index([receiverId])
+}
+
+model Message {
+  id            String    @id @default(cuid())
+  content       String    @db.Text
+  isRead        Boolean   @default(false)
+  
+  // Relationships
+  assignmentId  String?
+  assignment    Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  
+  senderId      String
+  sender        User       @relation("SentMessages", fields: [senderId], references: [id])
+  
+  receiverId    String
+  receiver      User       @relation("ReceivedMessages", fields: [receiverId], references: [id])
+  
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  @@index([assignmentId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
