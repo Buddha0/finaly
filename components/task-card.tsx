@@ -4,8 +4,10 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Progress } from "@/components/ui/progress"
 import { Clock, DollarSign, FileText, MessageSquare } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { toast } from "sonner"
 
-export type TaskStatus = "open" | "in-progress" | "completed" | "pending-review"
+export type TaskStatus = "open" | "in-progress" | "completed" | "pending-review" | "assigned"
 
 export interface TaskCardProps {
   id: string
@@ -18,8 +20,10 @@ export interface TaskCardProps {
   progress?: number
   bidsCount?: number
   doerName?: string
+  posterName?: string
   messagesCount?: number
   viewType?: "poster" | "doer" | "admin"
+  onPlaceBid?: () => void
 }
 
 export function TaskCard({
@@ -33,14 +37,19 @@ export function TaskCard({
   progress = 0,
   bidsCount = 0,
   doerName,
+  posterName,
   messagesCount = 0,
   viewType = "poster",
+  onPlaceBid,
 }: TaskCardProps) {
+  const router = useRouter()
+  
   const statusColors: Record<TaskStatus, string> = {
     open: "bg-blue-500",
     "in-progress": "bg-yellow-500",
     completed: "bg-green-500",
     "pending-review": "bg-purple-500",
+    assigned: "bg-indigo-500",
   }
 
   const statusLabels: Record<TaskStatus, string> = {
@@ -48,10 +57,42 @@ export function TaskCard({
     "in-progress": "In Progress",
     completed: "Completed",
     "pending-review": "Pending Review",
+    assigned: "Assigned",
   }
 
   const deadlineDate = new Date(deadline)
   const isDeadlineSoon = deadlineDate.getTime() - Date.now() < 86400000 * 3 // 3 days
+
+  const handleViewDetails = () => {
+    const route = viewType === "poster" 
+      ? `/poster/tasks/${id}` 
+      : viewType === "doer" 
+        ? `/doer/tasks/${id}` 
+        : `/admin/tasks/${id}`
+    
+    router.push(route)
+    
+    const viewAction = viewType === "poster" 
+      ? "Viewing your task details" 
+      : viewType === "doer" 
+        ? `Viewing task from ${posterName || 'poster'}`
+        : "Managing task"
+        
+    toast.info(viewAction, {
+      description: title
+    })
+  }
+
+  const handlePlaceBid = () => {
+    if (onPlaceBid) {
+      onPlaceBid()
+    } else {
+      router.push(`/doer/tasks/${id}`)
+      toast.info("Opening bid form", {
+        description: `Preparing to place bid on "${title}"`
+      })
+    }
+  }
 
   return (
     <Card className="overflow-hidden">
@@ -105,24 +146,20 @@ export function TaskCard({
             ) : (
               <div className="text-xs text-muted-foreground">Assigned to {doerName || "a doer"}</div>
             )}
-            <Button asChild size="sm">
-              <Link href={`/poster/tasks/${id}`}>View Details</Link>
-            </Button>
+            <Button size="sm" onClick={handleViewDetails}>View Details</Button>
           </>
         )}
 
         {viewType === "doer" && (
           <>
             {status === "open" ? (
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handlePlaceBid}>
                 Place Bid
               </Button>
             ) : (
               <div className="text-xs text-muted-foreground">You&apos;re working on this task</div>
             )}
-            <Button asChild size="sm">
-              <Link href={`/doer/tasks/${id}`}>View Details</Link>
-            </Button>
+            <Button size="sm" onClick={handleViewDetails}>View Details</Button>
           </>
         )}
 
@@ -131,9 +168,7 @@ export function TaskCard({
             <div className="text-xs text-muted-foreground">
               {status === "open" ? `${bidsCount} bids` : `Assigned to ${doerName || "a doer"}`}
             </div>
-            <Button asChild size="sm">
-              <Link href={`/admin/tasks/${id}`}>Manage</Link>
-            </Button>
+            <Button size="sm" onClick={handleViewDetails}>Manage</Button>
           </>
         )}
       </CardFooter>

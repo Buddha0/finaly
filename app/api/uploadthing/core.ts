@@ -1,6 +1,6 @@
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
-import { getAuth } from "@clerk/nextjs/server";
+import { auth } from "@clerk/nextjs/server"; // Clerk's auth function
 
 const f = createUploadthing();
 
@@ -13,13 +13,17 @@ export const ourFileRouter = {
     text: { maxFileSize: "8MB", maxFileCount: 10 },
     video: { maxFileSize: "1GB", maxFileCount: 2 },
   })
-   
-    .middleware(async (req) => {
-     const { userId } = getAuth(req);
+    // Set permissions and file types for this FileRoute
+    .middleware(async () => {
+      // This code runs on your server before upload
+      const { userId } = await auth(); // Use Clerk's auth function to get user info
 
-     if (!userId) throw new UploadThingError("Unauthorized");
+      // If no userId, user is not authenticated
+      
+      if (!userId) throw new UploadThingError("Unauthorized");
 
-     return { userId };
+      // Return userId as metadata, accessible in onUploadComplete
+      return { userId };
     })
     .onUploadComplete(async ({ metadata, file }) => {
       // This code RUNS ON YOUR SERVER after upload
@@ -32,13 +36,13 @@ export const ourFileRouter = {
     
   // Special route for citizenship ID uploads with stricter limits
   citizenshipUploader: f({
-    image: { maxFileSize: "4MB", maxFileCount: 2 },
+    image: { maxFileSize: "4MB", maxFileCount: 3 },
   })
-    .middleware(async (req) => {
-      const { userId } = getAuth(req);
-
+    .middleware(async () => {
+      const { userId } = await auth();
+      
       if (!userId) throw new UploadThingError("Unauthorized");
- 
+      
       return { userId };
     })
     .onUploadComplete(async ({ metadata, file }) => {

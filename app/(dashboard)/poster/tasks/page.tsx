@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { TaskCard } from "@/components/task-card"
 import { Button } from "@/components/ui/button"
@@ -9,11 +9,32 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { FilePlus, Home, ListChecks, Search, X } from "lucide-react"
+import { FilePlus, Home, ListChecks, Search, X, Loader2 } from "lucide-react"
 import Link from "next/link"
+import { getUserTasks } from "@/actions/utility/task-utility"
+import { useUser } from "@clerk/nextjs"
+import { toast } from "sonner"
+import { AssignmentStatus } from "@prisma/client"
 
 // Define types
-type TaskStatus = "open" | "in-progress" | "pending-review" | "completed";
+type UITaskStatus = "open" | "in-progress" | "pending-review" | "completed" | "assigned";
+
+function mapAssignmentStatusToUIStatus(status: AssignmentStatus): UITaskStatus {
+  switch (status) {
+    case "OPEN":
+      return "open"
+    case "ASSIGNED":
+      return "assigned" 
+    case "IN_PROGRESS":
+      return "in-progress"
+    case "UNDER_REVIEW":
+      return "pending-review"
+    case "COMPLETED":
+      return "completed"
+    default:
+      return "open"
+  }
+}
 
 interface Task {
   id: string;
@@ -22,12 +43,13 @@ interface Task {
   category: string;
   budget: number;
   deadline: string;
-  status: TaskStatus;
+  status: UITaskStatus;
   progress?: number;
   doerName?: string;
   messagesCount?: number;
   bidsCount?: number;
 }
+
 
 const navItems = [
   {
@@ -46,107 +68,53 @@ const navItems = [
     icon: FilePlus,
   },
  
-]
-
-// Mock data
-const allTasks: Task[] = [
-  {
-    id: "1",
-    title: "Research Paper on Renewable Energy",
-    description: "Need a 10-page research paper on renewable energy sources and their impact on climate change.",
-    category: "Research",
-    budget: 120,
-    deadline: "2023-12-15",
-    status: "in-progress",
-    progress: 65,
-    doerName: "John Smith",
-    messagesCount: 5,
-  },
-  {
-    id: "2",
-    title: "Mathematics Assignment - Calculus",
-    description: "Need help with calculus problems for my university course.",
-    category: "Mathematics",
-    budget: 50,
-    deadline: "2023-12-10",
-    status: "open",
-    bidsCount: 3,
-  },
-  {
-    id: "3",
-    title: "Programming Project - Web Scraper",
-    description: "Need a Python web scraper that can extract data from e-commerce websites.",
-    category: "Programming",
-    budget: 200,
-    deadline: "2023-12-20",
-    status: "pending-review",
-    progress: 100,
-    doerName: "Alice Johnson",
-    messagesCount: 12,
-  },
-  {
-    id: "4",
-    title: "Essay on Climate Change",
-    description: "Need a 5-page essay discussing the effects of climate change on global ecosystems.",
-    category: "Writing",
-    budget: 75,
-    deadline: "2023-12-12",
-    status: "open",
-    bidsCount: 2,
-  },
-  {
-    id: "5",
-    title: "Data Visualization Dashboard",
-    description: "Need a dashboard to visualize sales data using D3.js or similar library.",
-    category: "Programming",
-    budget: 250,
-    deadline: "2023-12-25",
-    status: "in-progress",
-    progress: 30,
-    doerName: "Michael Brown",
-    messagesCount: 3,
-  },
-  {
-    id: "6",
-    title: "Literature Review on AI Ethics",
-    description: "Need a comprehensive literature review on ethical considerations in AI development.",
-    category: "Research",
-    budget: 180,
-    deadline: "2023-12-18",
-    status: "completed",
-    progress: 100,
-    doerName: "Emily Chen",
-    messagesCount: 8,
-  },
-  {
-    id: "7",
-    title: "Physics Problem Set",
-    description: "Need solutions for 20 physics problems covering mechanics and thermodynamics.",
-    category: "Science",
-    budget: 90,
-    deadline: "2023-12-08",
-    status: "completed",
-    progress: 100,
-    doerName: "David Wilson",
-    messagesCount: 4,
-  },
-  {
-    id: "8",
-    title: "Mobile App UI Design",
-    description: "Need UI designs for a fitness tracking mobile app (iOS and Android).",
-    category: "Design",
-    budget: 300,
-    deadline: "2023-12-30",
-    status: "open",
-    bidsCount: 7,
-  },
+  
 ]
 
 export default function PosterTasks() {
+  const { user } = useUser()
+  const [tasks, setTasks] = useState<Task[]>([])
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState("")
   const [selectedCategory, setSelectedCategory] = useState("all")
   const [selectedStatus, setSelectedStatus] = useState("all")
   const [sortBy, setSortBy] = useState("newest")
+
+  useEffect(() => {
+    async function loadTasks() {
+      if (!user?.id) return
+
+      try {
+        const result = await getUserTasks(user.id)
+        if (result.success && result.data) {
+          // Transform the data to match our Task interface
+          const transformedTasks = result.data.map(task => ({
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            budget: task.budget,
+            deadline: task.deadline.toISOString().split('T')[0],
+            status: mapAssignmentStatusToUIStatus(task.status),
+            progress: task.progress,
+            doerName: task.doerName,
+            messagesCount: task.messagesCount,
+            bidsCount: task.bidsCount
+          }))
+          setTasks(transformedTasks)
+        } else {
+          toast.error(result.error || "Failed to load tasks")
+        }
+      } catch (error) {
+        console.error("Error loading tasks:", error)
+        toast.error("Failed to load tasks")
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    loadTasks()
+  }, [user?.id])
 
   // Filter tasks based on search, category, and status
   const filterTasks = (tasks: Task[]): Task[] => {
@@ -179,13 +147,15 @@ export default function PosterTasks() {
     }
   }
 
-  const openTasks = allTasks.filter((task: Task) => task.status === "open")
-  const inProgressTasks = allTasks.filter((task: Task) => task.status === "in-progress")
-  const pendingReviewTasks = allTasks.filter((task: Task) => task.status === "pending-review")
-  const completedTasks = allTasks.filter((task: Task) => task.status === "completed")
+  const openTasks = tasks.filter((task: Task) => task.status === "open")
+  const assignedTasks = tasks.filter((task: Task) => task.status === "assigned")
+  const inProgressTasks = tasks.filter((task: Task) => task.status === "in-progress")
+  const pendingReviewTasks = tasks.filter((task: Task) => task.status === "pending-review")
+  const completedTasks = tasks.filter((task: Task) => task.status === "completed")
 
-  const filteredAllTasks = sortTasks(filterTasks(allTasks))
+  const filteredAllTasks = sortTasks(filterTasks(tasks))
   const filteredOpenTasks = sortTasks(filterTasks(openTasks))
+  const filteredAssignedTasks = sortTasks(filterTasks(assignedTasks))
   const filteredInProgressTasks = sortTasks(filterTasks(inProgressTasks))
   const filteredPendingReviewTasks = sortTasks(filterTasks(pendingReviewTasks))
   const filteredCompletedTasks = sortTasks(filterTasks(completedTasks))
@@ -199,8 +169,21 @@ export default function PosterTasks() {
 
   const hasActiveFilters = searchQuery || selectedCategory !== "all" || selectedStatus !== "all" || sortBy !== "newest"
 
+  if (loading) {
+    return (
+      <DashboardLayout navItems={navItems} userRole="poster" userName={user?.fullName || ""}>
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">Loading tasks...</p>
+          </div>
+        </div>
+      </DashboardLayout>
+    )
+  }
+
   return (
-    <DashboardLayout navItems={navItems} userRole="poster" userName="Sarah Williams">
+    <DashboardLayout navItems={navItems} userRole="poster" userName={user?.fullName || ""}>
       <div className="flex flex-col gap-6 w-full">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">My Tasks</h1>
@@ -250,6 +233,7 @@ export default function PosterTasks() {
                   <SelectContent>
                     <SelectItem value="all">All Statuses</SelectItem>
                     <SelectItem value="open">Open</SelectItem>
+                    <SelectItem value="assigned">Assigned</SelectItem>
                     <SelectItem value="in-progress">In Progress</SelectItem>
                     <SelectItem value="pending-review">Pending Review</SelectItem>
                     <SelectItem value="completed">Completed</SelectItem>
@@ -321,6 +305,16 @@ export default function PosterTasks() {
 
           <Card>
             <CardHeader className="pb-2">
+              <CardTitle className="text-lg">Assigned Tasks</CardTitle>
+              <CardDescription>Tasks assigned to others</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-3xl font-bold">{assignedTasks.length}</div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-2">
               <CardTitle className="text-lg">In Progress</CardTitle>
               <CardDescription>Currently being worked on</CardDescription>
             </CardHeader>
@@ -354,6 +348,7 @@ export default function PosterTasks() {
           <TabsList>
             <TabsTrigger value="all">All Tasks ({filteredAllTasks.length})</TabsTrigger>
             <TabsTrigger value="open">Open ({filteredOpenTasks.length})</TabsTrigger>
+            <TabsTrigger value="assigned">Assigned ({filteredAssignedTasks.length})</TabsTrigger>
             <TabsTrigger value="in-progress">In Progress ({filteredInProgressTasks.length})</TabsTrigger>
             <TabsTrigger value="pending-review">Pending Review ({filteredPendingReviewTasks.length})</TabsTrigger>
             <TabsTrigger value="completed">Completed ({filteredCompletedTasks.length})</TabsTrigger>
@@ -393,6 +388,27 @@ export default function PosterTasks() {
                   <Search className="h-6 w-6 text-muted-foreground" />
                 </div>
                 <h3 className="mt-4 text-lg font-semibold">No open tasks found</h3>
+                <p className="mt-2 text-sm text-muted-foreground">Try adjusting your search or filter criteria</p>
+                <Button variant="outline" className="mt-4" onClick={clearFilters}>
+                  Clear Filters
+                </Button>
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="assigned" className="mt-4">
+            {filteredAssignedTasks.length > 0 ? (
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredAssignedTasks.map((task: Task) => (
+                  <TaskCard key={task.id} {...task} viewType="poster" />
+                ))}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <div className="rounded-full bg-muted p-3">
+                  <Search className="h-6 w-6 text-muted-foreground" />
+                </div>
+                <h3 className="mt-4 text-lg font-semibold">No assigned tasks found</h3>
                 <p className="mt-2 text-sm text-muted-foreground">Try adjusting your search or filter criteria</p>
                 <Button variant="outline" className="mt-4" onClick={clearFilters}>
                   Clear Filters

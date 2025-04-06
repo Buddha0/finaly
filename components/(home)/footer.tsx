@@ -38,17 +38,17 @@ export default function Footer() {
                             <div>
                                 <div className="text-sm font-medium">Address:</div>
                                 <address className="text-sm text-muted-foreground not-italic">
-                                    Level 1, 12 Sample St, Sydney NSW 2000
+                                   Kathmandu, Nepal
                                 </address>
                             </div>
                             <div>
                                 <div className="text-sm font-medium">Contact:</div>
                                 <div className="space-y-1">
                                     <a href="tel:1800123456" className="text-sm text-muted-foreground block hover:text-foreground">
-                                        1800 123 4567
+                                       980000123
                                     </a>
                                     <a href="mailto:info@situne.io" className="text-sm text-muted-foreground block hover:text-foreground">
-                                        info@situne.io
+                                        info@assignmentheloer.com
                                     </a>
                                 </div>
                             </div>

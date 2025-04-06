@@ -1,5 +1,7 @@
+'use server'
+
 import prisma from "@/lib/db"
-import { useAuth } from "@clerk/nextjs"
+import { canCreateTask } from "@/actions/utility/check-verification"
 
 type CreateTaskInput = {
     title: string
@@ -8,17 +10,41 @@ type CreateTaskInput = {
     budget: number
     deadline: Date
     priority: string
-    attachments: string[] // URLs from UploadThing
+    attachments: Array<{ url: string; name: string }> // Updated type
     additional?: string
     posterId: string
 }
 
 export async function createTask(data: CreateTaskInput) {
-    const { userId } = useAuth()
     try {
-        if (!userId) {
+        if (!data.posterId) {
             throw new Error("User not authenticated")
         }
+
+        // Check if user is verified and can create tasks
+        const permissionCheck = await canCreateTask(data.posterId)
+        
+        if (!permissionCheck.success) {
+            return {
+                success: false,
+                error: permissionCheck.error || "Failed to check permission"
+            }
+        }
+        
+        // Cast to include expected properties from canCreateTask
+        const taskPermission = permissionCheck as { 
+            success: boolean; 
+            canCreate?: boolean;
+            error?: string; 
+        }
+        
+        if (!taskPermission.canCreate) {
+            return {
+                success: false,
+                error: taskPermission.error || "You don't have permission to create tasks"
+            }
+        }
+
         const task = await prisma.assignment.create({
             data: {
                 title: data.title,
@@ -27,15 +53,22 @@ export async function createTask(data: CreateTaskInput) {
                 budget: data.budget,
                 deadline: data.deadline,
                 priority: data.priority,
-                attachments: data.attachments, // Handles mix of file types (images, PDFs, etc.)
+                attachments: data.attachments,
                 additional: data.additional,
-                posterId: userId
+                posterId: data.posterId
             },
         })
 
-        return task
+        return {
+            success: true,
+            data: task,
+            message: `Task "${data.title}" created successfully`
+        }
     } catch (error) {
         console.error("Error creating task:", error)
-        throw new Error("Failed to create task")
+        return {
+            success: false,
+            error: "Failed to create task. Please try again."
+        }
     }
 }

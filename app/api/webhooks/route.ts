@@ -1,8 +1,9 @@
+
 import { Webhook } from 'svix';
 import { headers } from 'next/headers';
 import { WebhookEvent } from '@clerk/nextjs/server';
 import { clerkClient } from '@clerk/nextjs/server';
-import { PrismaClient } from '@prisma/client'; // No need to import Role here
+import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
@@ -37,12 +38,12 @@ export async function POST(req: Request) {
 
   const eventType = evt.type;
 
-  // Only process user.updated events
-  if (eventType === 'user.updated') {
+  if (eventType === 'user.created' || eventType === 'user.updated') {
     const userId = evt.data.id;
     const email = evt.data.email_addresses[0]?.email_address;
     const name = `${evt.data.first_name || ''} ${evt.data.last_name || ''}`.trim();
     const image = evt.data.image_url;
+    let role: "POSTER" | "DOER" | "ADMIN" = "DOER"; // Default role
 
     if (!userId) {
       return new Response('Error: User ID not found in webhook payload', { status: 400 });
@@ -50,43 +51,53 @@ export async function POST(req: Request) {
 
     try {
       const client = await clerkClient();
-      const clerkUser = await client.users.getUser(userId);
 
-      // Get role from metadata and map to the Prisma Role
-      let userRole: "POSTER" | "DOER" | "ADMIN" = "DOER"; // Default role
+      if (eventType === 'user.created') {
+        // Set default role in Clerk metadata
+        await client.users.updateUserMetadata(userId, { publicMetadata: { role: 'DOER' } });
+        console.log(`Assigned default role 'DOER' to user with ID ${userId}`);
 
-      if (clerkUser.publicMetadata && clerkUser.publicMetadata.role) {
-        const metadataRole = clerkUser.publicMetadata.role as string;
-        // Map string role to Prisma role string
-        if (metadataRole.toUpperCase() === 'POSTER') {
-          userRole = "POSTER";
-        } else if (metadataRole.toUpperCase() === 'ADMIN') {
-          userRole = "ADMIN";
+        // Create user in database
+        await prisma.user.create({
+          data: {
+            id: userId,
+            name: name,
+            email: email,
+            image: image,
+            role: role,
+          },
+        });
+
+        console.log(`User created in database with ID ${userId}`);
+      } else if (eventType === 'user.updated') {
+        const clerkUser = await client.users.getUser(userId);
+        
+        // Get role from metadata and map to the Prisma Role
+        if (clerkUser.publicMetadata && clerkUser.publicMetadata.role) {
+          const metadataRole = clerkUser.publicMetadata.role as string;
+          if (metadataRole.toUpperCase() === 'POSTER') {
+            role = "POSTER";
+          } else if (metadataRole.toUpperCase() === 'ADMIN') {
+            role = "ADMIN";
+          }
         }
-      }
 
-      // Update the user in the database
-      const existingUser = await prisma.user.findUnique({
-        where: { id: userId }
-      });
-
-      if (existingUser) {
+        // Update user in database
         await prisma.user.update({
           where: { id: userId },
           data: {
-            name,
-            email,
-            image,
-            role: userRole, // Use string role here
+            name: name,
+            email: email,
+            image: image,
+            role: role,
           },
         });
-        console.log(`User updated in database with ID ${userId} and role ${userRole}`);
-      } else {
-        console.log(`User with ID ${userId} not found. Update skipped.`);
+
+        console.log(`User updated in database with ID ${userId} and role ${role}`);
       }
     } catch (error) {
-      console.error('Error updating user:', error);
-      return new Response('Error: Could not update user', { status: 500 });
+      console.error('Error processing user:', error);
+      return new Response('Error: Could not process user', { status: 500 });
     }
   }
 

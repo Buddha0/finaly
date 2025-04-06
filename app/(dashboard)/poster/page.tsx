@@ -1,13 +1,19 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { useUser } from "@clerk/nextjs"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { StatsCard } from "@/components/stats-card"
 import { TaskCard } from "@/components/task-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CheckCircle, Clock, FileText, FilePlus, Home, ListChecks, MessageSquare } from "lucide-react"
+import { Role } from "@prisma/client"
+import { RoleSwitcher } from "@/app/(dashboard)/components/role-switcher"
+import { CheckCircle, Clock, FileText, FilePlus, Home, ListChecks, MessageSquare, ShieldCheck } from "lucide-react"
 import Link from "next/link"
+import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 const navItems = [
   {
@@ -25,8 +31,11 @@ const navItems = [
     label: "Create Task",
     icon: FilePlus,
   },
- 
-  
+  {
+    href: "/poster/verification",
+    label: "Verification",
+    icon: ShieldCheck,
+  }
 ]
 
 // Mock data
@@ -68,18 +77,44 @@ const recentTasks = [
 ]
 
 export default function PosterDashboard() {
+  const { user } = useUser()
+  const [currentRole, setCurrentRole] = useState<Role>("POSTER")
+  const router = useRouter()
+
+  // Get user's role from metadata
+  useEffect(() => {
+    if (user?.publicMetadata?.role) {
+      setCurrentRole(user.publicMetadata.role as Role)
+    }
+  }, [user])
+
+  // Show welcome toast when component mounts
+  useEffect(() => {
+    if (user) {
+      toast.success(`Welcome back, ${user.fullName || 'Poster'}!`, {
+        description: "You're in the poster dashboard",
+      })
+    }
+  }, [user])
+
+  const handleCreateTask = () => {
+    router.push("/poster/create-task")
+    toast.info("Starting a new task creation")
+  }
+
   return (
-    <DashboardLayout navItems={navItems} userRole="poster" userName="Sarah Williams">
+    <DashboardLayout navItems={navItems} userRole="poster" userName={user?.fullName || "Sarah Williams"}>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
-          <Button asChild>
-            <Link href="/poster/create-task">
-              <FilePlus className="mr-2 h-4 w-4" />
-              Create New Task
-            </Link>
+          <Button onClick={handleCreateTask}>
+            <FilePlus className="mr-2 h-4 w-4" />
+            Create New Task
           </Button>
         </div>
+
+        {/* Role Switcher */}
+        <RoleSwitcher currentRole={currentRole} />
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatsCard
