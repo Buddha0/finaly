@@ -1,33 +1,108 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useUser } from "@clerk/nextjs"
+import {
+  getActiveTasks,
+  getAvailableTasks,
+  getRecentBids,
+  getUserActivitySummary,
+} from "@/actions/doer-dashboard"
+import { getUserStats } from "@/actions/doer-stats"
+import { getCurrentUser } from "@/actions/get-current-user"
+import { RoleSwitcher } from "@/app/(dashboard)/components/role-switcher"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { StatsCard } from "@/components/stats-card"
 import { TaskCard } from "@/components/task-card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Role } from "@prisma/client"
-import { RoleSwitcher } from "@/app/(dashboard)/components/role-switcher"
+import { useUser } from "@clerk/nextjs"
+import { Role, AssignmentStatus } from "@prisma/client"
+import { mapAssignmentStatusToTaskStatus } from "@/types/doer-dashboard"
 import {
+  Briefcase,
   CheckCircle,
+  ClipboardList,
   Clock,
-  FileText,
   Home,
-  ListChecks,
+  ListFilter,
   MessageSquare,
   Search,
-  ThumbsUp,
-  User,
-  ListFilter,
-  ClipboardList,
-  Briefcase,
   ShieldCheck,
+  ThumbsUp
 } from "lucide-react"
-import Link from "next/link"
-import { toast } from "sonner"
 import { useRouter } from "next/navigation"
+import { useEffect, useState, useRef } from "react"
+import { toast } from "sonner"
+
+// Define types that match the actual data structure returned by API
+interface Task {
+  id: string
+  title: string
+  description?: string
+  budget: number
+  deadline: Date
+  status: string
+  category: string
+  progress?: number
+  posterName?: string
+  messagesCount?: number
+  bidsCount?: number
+  poster?: {
+    name: string
+    image: string
+  }
+}
+
+interface Bid {
+  id: string
+  bidAmount: number
+  content: string
+  status: string
+  createdAt: Date
+  userId?: string
+  assignmentId?: string
+  assignment: {
+    title: string
+  }
+  taskId?: string
+  taskTitle?: string
+  taskBudget?: number
+  taskStatus?: string
+}
+
+interface Message {
+  id: string
+  content: string
+  createdAt: Date
+  isRead?: boolean
+  senderId?: string
+  receiverId?: string
+  assignment?: any
+  sender?: {
+    name: string
+    image: string
+  }
+  taskTitle?: string
+}
+
+interface ActivitySummary {
+  recentMessages: Message[]
+  recentTaskUpdates: {
+    id: string
+    title: string
+    status: string
+    updatedAt: Date
+  }[]
+  recentBid: Bid | null
+}
+
+interface UserStats {
+  activeTasks: number
+  completedTasks: number
+  successRate: number
+  unreadMessages: number
+}
 
 const navItems = [
   {
@@ -57,71 +132,176 @@ const navItems = [
   }
 ]
 
-// Mock data
-const activeTasks = [
-  {
-    id: "1",
-    title: "Research Paper on Renewable Energy",
-    description: "Need a 10-page research paper on renewable energy sources and their impact on climate change.",
-    category: "Research",
-    budget: 120,
-    deadline: "2023-12-15",
-    status: "in-progress" as const,
-    progress: 65,
-    posterName: "Sarah Williams",
-    messagesCount: 5,
-  },
-  {
-    id: "2",
-    title: "Programming Project - Web Scraper",
-    description: "Need a Python web scraper that can extract data from e-commerce websites.",
-    category: "Programming",
-    budget: 200,
-    deadline: "2023-12-20",
-    status: "in-progress" as const,
-    progress: 30,
-    posterName: "Michael Johnson",
-    messagesCount: 2,
-  },
-]
+// Helper function to format timestamps
+function formatTimestamp(date: Date | string) {
+  const now = new Date();
+  const timestamp = new Date(date);
+  const diffInSeconds = Math.floor((now.getTime() - timestamp.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) {
+    return 'just now';
+  } else if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes} minute${minutes > 1 ? 's' : ''} ago`;
+  } else if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours} hour${hours > 1 ? 's' : ''} ago`;
+  } else if (diffInSeconds < 604800) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days} day${days > 1 ? 's' : ''} ago`;
+  } else {
+    return timestamp.toLocaleDateString();
+  }
+}
 
-const availableTasks = [
-  {
-    id: "3",
-    title: "Mathematics Assignment - Calculus",
-    description: "Need help with calculus problems for my university course.",
-    category: "Mathematics",
-    budget: 50,
-    deadline: "2023-12-10",
-    status: "open" as const,
-    bidsCount: 3,
-  },
-  {
-    id: "4",
-    title: "English Literature Essay - Shakespeare Analysis",
-    description: "Need a 5-page analysis of Shakespeare's Macbeth focusing on the theme of ambition.",
-    category: "Writing",
-    budget: 80,
-    deadline: "2023-12-12",
-    status: "open" as const,
-    bidsCount: 2,
-  },
-  {
-    id: "5",
-    title: "Data Analysis Project - Excel",
-    description: "Need help analyzing survey data using Excel and creating visualizations.",
-    category: "Data Analysis",
-    budget: 100,
-    deadline: "2023-12-18",
-    status: "open" as const,
-    bidsCount: 1,
-  },
-]
+function LoadingCard() {
+  return (
+    <Card className="animate-pulse">
+      <CardHeader className="pb-2">
+        <div className="h-6 bg-gray-200 rounded w-2/3 mb-2"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+      </CardHeader>
+      <CardContent>
+        <div className="h-20 bg-gray-200 rounded"></div>
+      </CardContent>
+    </Card>
+  )
+}
 
 export default function DoerDashboard() {
   const { user } = useUser()
   const [currentRole, setCurrentRole] = useState<Role>("DOER")
   const router = useRouter()
+  
+  // State for DB data
+  const [activeTasks, setActiveTasks] = useState<Task[]>([])
+  const [availableTasks, setAvailableTasks] = useState<Task[]>([])
+  const [recentBids, setRecentBids] = useState<Bid[]>([])
+  const [activitySummary, setActivitySummary] = useState<ActivitySummary>({
+    recentMessages: [],
+    recentTaskUpdates: [],
+    recentBid: null
+  })
+  const [userStats, setUserStats] = useState<UserStats>({
+    activeTasks: 0,
+    completedTasks: 0,
+    successRate: 0,
+    unreadMessages: 0
+  })
+  const [loading, setLoading] = useState(true)
+  
+  // Get user data
+  useEffect(() => {
+    async function fetchUserData() {
+      if (user?.id) {
+        try {
+          setLoading(true)
+          // Removed unused userData variable
+          await getCurrentUser()
+          
+          // Fetch all data in parallel
+          const [
+            activeTasksData,
+            availableTasksData,
+            recentBidsData,
+            activitySummaryData,
+            userStatsData
+          ] = await Promise.all([
+            getActiveTasks(user.id),
+            getAvailableTasks(),
+            getRecentBids(user.id),
+            getUserActivitySummary(user.id),
+            getUserStats(user.id)
+          ])
+          
+          // Transform active tasks data
+          const mappedActiveTasks = activeTasksData?.map((task: any) => ({
+            id: task.id,
+            title: task.title || "Untitled Task",
+            description: task.description || "",
+            budget: task.budget,
+            deadline: task.deadline,
+            status: task.status || "PENDING",
+            category: task.category,
+            progress: task.progress || 0,
+            posterName: task.poster?.name,
+            messagesCount: task.messagesCount || 0
+          })) || []
+          
+          // Transform available tasks data
+          const mappedAvailableTasks = availableTasksData?.map((task: any) => ({
+            id: task.id,
+            title: task.title || "Untitled Task",
+            description: task.description || "",
+            budget: task.budget,
+            deadline: task.deadline,
+            status: "OPEN",
+            category: task.category,
+            bidsCount: task.bidCount || 0
+          })) || []
+          
+          // Transform bids data
+          const mappedBids = recentBidsData?.map((bid: any) => ({
+            id: bid.id,
+            bidAmount: bid.bidAmount,
+            content: bid.content || "",
+            status: bid.status,
+            createdAt: bid.createdAt,
+            assignment: {
+              title: bid.taskTitle || "Untitled Task"
+            }
+          })) || []
+          
+          // Map activity summary
+          const mappedActivitySummary = {
+            recentMessages: activitySummaryData?.recentMessages?.map((msg: any) => ({
+              id: msg.id,
+              content: msg.content,
+              createdAt: msg.createdAt,
+              sender: msg.sender
+            })) || [],
+            recentTaskUpdates: activitySummaryData?.recentTaskUpdates || [],
+            recentBid: null
+          }
+          
+          // Debug and set recentBid if it exists
+          if (activitySummaryData?.recentBid) {
+            console.log("Recent bid data:", activitySummaryData.recentBid);
+            
+            // Create bid with required fields and fallbacks for any missing properties
+            mappedActivitySummary.recentBid = {
+              id: activitySummaryData.recentBid.id,
+              bidAmount: 0, // Default value since actual property is missing
+              content: "",  // Default empty content
+              status: activitySummaryData.recentBid.status || "pending",
+              createdAt: activitySummaryData.recentBid.createdAt,
+              assignment: {
+                title: activitySummaryData.recentBid.taskTitle || "Untitled Task"
+              }
+            };
+          }
+          
+          setActiveTasks(mappedActiveTasks)
+          setAvailableTasks(mappedAvailableTasks)
+          setRecentBids(mappedBids)
+          setActivitySummary(mappedActivitySummary)
+          setUserStats(userStatsData || {
+            activeTasks: 0,
+            completedTasks: 0,
+            successRate: 0,
+            unreadMessages: 0
+          })
+        } catch (error) {
+          console.error("Error fetching user data:", error)
+          toast.error("Failed to load your data")
+        } finally {
+          setLoading(false)
+        }
+      }
+    }
+    
+    fetchUserData()
+  }, [user?.id])
 
   // Get user's role from metadata
   useEffect(() => {
@@ -131,13 +311,15 @@ export default function DoerDashboard() {
   }, [user])
 
   // Show welcome toast when component mounts
+  const welcomeToastShown = useRef(false);
   useEffect(() => {
-    if (user) {
+    if (user && !welcomeToastShown.current) {
       toast.success(`Welcome back, ${user.fullName || 'Doer'}!`, {
         description: "You're in the doer dashboard",
-      })
+      });
+      welcomeToastShown.current = true;
     }
-  }, [user])
+  }, [user]);
 
   const handleFindTasks = () => {
     router.push("/doer/available-tasks")
@@ -145,7 +327,7 @@ export default function DoerDashboard() {
   }
 
   return (
-    <DashboardLayout navItems={navItems} userRole="doer" userName={user?.fullName || "John Smith"}>
+    <DashboardLayout navItems={navItems} userRole="doer" userName={user?.fullName || "User"}>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
@@ -158,194 +340,247 @@ export default function DoerDashboard() {
         {/* Role Switcher */}
         <RoleSwitcher currentRole={currentRole} />
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatsCard
-            title="Active Tasks"
-            value="2"
-            description="Tasks currently in progress"
-            icon={Clock}
-            trend={{ value: 0, isPositive: true }}
-          />
-          <StatsCard
-            title="Completed Tasks"
-            value="8"
-            description="Successfully completed tasks"
-            icon={CheckCircle}
-            trend={{ value: 25, isPositive: true }}
-          />
-          <StatsCard
-            title="Success Rate"
-            value="95%"
-            description="Task completion rate"
-            icon={ThumbsUp}
-            trend={{ value: 3, isPositive: true }}
-          />
-          <StatsCard title="Messages" value="3" description="Unread messages from posters" icon={MessageSquare} />
-        </div>
-
-        <Tabs defaultValue="active" className="w-full">
-          <TabsList>
-            <TabsTrigger value="active">Active Tasks</TabsTrigger>
-            <TabsTrigger value="available">Available Tasks</TabsTrigger>
-            <TabsTrigger value="recent-bids">Recent Bids</TabsTrigger>
-          </TabsList>
-          <TabsContent value="active" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {activeTasks.map((task) => (
-                <TaskCard key={task.id} {...task} viewType="doer" />
+        {loading ? (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              {Array(4).fill(0).map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardHeader className="pb-2">
+                    <div className="h-6 bg-gray-200 rounded w-1/2 mb-2"></div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="h-10 bg-gray-200 rounded mb-2"></div>
+                    <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                  </CardContent>
+                </Card>
               ))}
             </div>
-          </TabsContent>
-          <TabsContent value="available" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {availableTasks.slice(0, 3).map((task) => (
-                <TaskCard key={task.id} {...task} viewType="doer" />
-              ))}
-            </div>
-          </TabsContent>
-          <TabsContent value="recent-bids" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Mathematics Assignment - Calculus</CardTitle>
-                  <CardDescription>Bid submitted 1 day ago</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">Budget</span>
-                    <span>$50</span>
-                  </div>
-                  <div className="flex justify-between mb-4">
-                    <span className="text-sm font-medium">Your Bid</span>
-                    <span className="font-bold">$45</span>
-                  </div>
-                  <div className="flex justify-between items-center rounded-lg bg-muted p-2">
-                    <span className="text-sm">Status</span>
-                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Pending</span>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card>
-                <CardHeader>
-                  <CardTitle>English Literature Essay - Shakespeare Analysis</CardTitle>
-                  <CardDescription>Bid submitted 2 days ago</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="flex justify-between mb-2">
-                    <span className="text-sm font-medium">Budget</span>
-                    <span>$80</span>
-                  </div>
-                  <div className="flex justify-between mb-4">
-                    <span className="text-sm font-medium">Your Bid</span>
-                    <span className="font-bold">$75</span>
-                  </div>
-                  <div className="flex justify-between items-center rounded-lg bg-muted p-2">
-                    <span className="text-sm">Status</span>
-                    <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded-full">Pending</span>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-        </Tabs>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Activity Summary</CardTitle>
-              <CardDescription>Your recent activities</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-200">
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">New message from Sarah Williams</p>
-                    <p className="text-sm text-muted-foreground">On "Research Paper on Renewable Energy"</p>
-                    <p className="text-xs text-muted-foreground">30 minutes ago</p>
-                  </div>
+            <Tabs defaultValue="active" className="w-full">
+              <TabsList>
+                <TabsTrigger value="active">Active Tasks</TabsTrigger>
+                <TabsTrigger value="available">Available Tasks</TabsTrigger>
+                <TabsTrigger value="recent-bids">Recent Bids</TabsTrigger>
+              </TabsList>
+              <TabsContent value="active" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
                 </div>
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-200">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Updated task progress</p>
-                    <p className="text-sm text-muted-foreground">
-                      "Research Paper on Renewable Energy" is now 65% complete
-                    </p>
-                    <p className="text-xs text-muted-foreground">2 hours ago</p>
-                  </div>
+              </TabsContent>
+              <TabsContent value="available" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
                 </div>
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-200">
-                    <FileText className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Submitted bid</p>
-                    <p className="text-sm text-muted-foreground">
-                      Bid on "Mathematics Assignment - Calculus" for $45
-                    </p>
-                    <p className="text-xs text-muted-foreground">1 day ago</p>
-                  </div>
+              </TabsContent>
+              <TabsContent value="recent-bids" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </TabsContent>
+            </Tabs>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Your Profile</CardTitle>
-              <CardDescription>Summary of your profile information</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-4 mb-6">
-                <div className="h-16 w-16 overflow-hidden rounded-full bg-muted flex items-center justify-center">
-                  <User className="h-8 w-8 text-muted-foreground" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">John Smith</h3>
-                  <p className="text-sm text-muted-foreground">Joined January 2023</p>
-                </div>
-              </div>
-              <div className="space-y-4">
-                <div className="flex justify-between items-center pb-2 border-b">
-                  <span className="text-sm font-medium">Rating</span>
-                  <div className="flex items-center">
-                    <span className="mr-2 font-semibold">4.8/5</span>
-                    <div className="flex">
-                      {[...Array(5)].map((_, i) => (
-                        <svg
-                          key={i}
-                          className={`h-4 w-4 ${i < 5 ? "text-yellow-400" : "text-gray-300"}`}
-                          fill="currentColor"
-                          viewBox="0 0 20 20"
-                          xmlns="http://www.w3.org/2000/svg"
-                        >
-                          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-                        </svg>
-                      ))}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>Your latest updates and notifications</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {Array(3).fill(0).map((_, i) => (
+                    <div key={i} className="flex items-start gap-4 rounded-lg border p-4 animate-pulse">
+                      <div className="h-5 w-5 rounded-full bg-gray-200"></div>
+                      <div className="w-full">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                      </div>
                     </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        ) : (
+          <>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <StatsCard
+                title="Active Tasks"
+                value={userStats.activeTasks}
+                description="Tasks currently in progress"
+                icon={Clock}
+                trend={{ value: 0, isPositive: true }}
+              />
+              <StatsCard
+                title="Completed Tasks"
+                value={userStats.completedTasks}
+                description="Successfully completed tasks"
+                icon={CheckCircle}
+                trend={{ value: 0, isPositive: true }}
+              />
+              <StatsCard
+                title="Success Rate"
+                value={`${userStats.successRate}%`}
+                description="Task completion rate"
+                icon={ThumbsUp}
+                trend={{ value: 0, isPositive: true }}
+              />
+              <StatsCard 
+                title="Messages" 
+                value={userStats.unreadMessages} 
+                description="Unread messages from posters" 
+                icon={MessageSquare} 
+              />
+            </div>
+
+            <Tabs defaultValue="active" className="w-full">
+              <TabsList>
+                <TabsTrigger value="active">Active Tasks</TabsTrigger>
+                <TabsTrigger value="available">Available Tasks</TabsTrigger>
+                <TabsTrigger value="recent-bids">Recent Bids</TabsTrigger>
+              </TabsList>
+              <TabsContent value="active" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {activeTasks.length > 0 ? (
+                    activeTasks.map((task) => (
+                      <TaskCard 
+                        key={task.id} 
+                        id={task.id}
+                        title={task.title || "Untitled Task"}
+                        description={task.description || ""}
+                        category={task.category || ""}
+                        budget={task.budget || 0}
+                        deadline={task.deadline}
+                        status={mapAssignmentStatusToTaskStatus(task.status || AssignmentStatus.OPEN)}
+                        progress={task.progress || 0}
+                        posterName={task.posterName || "Poster"}
+                        messagesCount={task.messagesCount || 0}
+                        viewType="doer" 
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-3 flex justify-center py-8">
+                      <p className="text-muted-foreground">No active tasks found</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+              <TabsContent value="available" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {availableTasks.length > 0 ? (
+                    availableTasks.slice(0, 3).map((task) => (
+                      <TaskCard 
+                        key={task.id} 
+                        id={task.id}
+                        title={task.title || "Untitled Task"}
+                        description={task.description || ""}
+                        category={task.category || ""}
+                        budget={task.budget || 0}
+                        deadline={task.deadline}
+                        status={mapAssignmentStatusToTaskStatus(task.status || AssignmentStatus.OPEN)}
+                        bidsCount={task.bidsCount || 0}
+                        viewType="doer" 
+                      />
+                    ))
+                  ) : (
+                    <div className="col-span-3 flex justify-center py-8">
+                      <p className="text-muted-foreground">No available tasks found</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+              <TabsContent value="recent-bids" className="mt-4">
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                  {recentBids.length > 0 ? (
+                    recentBids.map((bid) => (
+                      <Card key={bid.id}>
+                        <CardHeader>
+                          <CardTitle>{bid.assignment.title}</CardTitle>
+                          <CardDescription>Bid submitted {formatTimestamp(bid.createdAt)}</CardDescription>
+                        </CardHeader>
+                        <CardContent>
+                          <div className="mb-2 flex items-center justify-between">
+                            <span className="text-sm font-medium">Your Bid:</span>
+                            <span className="font-bold">${bid.bidAmount.toFixed(2)}</span>
+                          </div>
+                          <p className="line-clamp-2 text-sm text-muted-foreground">{bid.content}</p>
+                          <div className="mt-4">
+                            <Badge className={
+                              bid.status === "accepted" ? "bg-green-500 text-white" : 
+                              bid.status === "rejected" ? "bg-red-500 text-white" : 
+                              "bg-yellow-500 text-white"
+                            }>
+                              {bid.status.charAt(0).toUpperCase() + bid.status.slice(1)}
+                            </Badge>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))
+                  ) : (
+                    <div className="col-span-3 flex justify-center py-8">
+                      <p className="text-muted-foreground">No recent bids found</p>
+                    </div>
+                  )}
+                </div>
+              </TabsContent>
+            </Tabs>
+
+            {/* Activity Feed */}
+            <Card className="mt-6">
+              <CardHeader>
+                <CardTitle>Recent Activity</CardTitle>
+                <CardDescription>Your latest updates and notifications</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activitySummary.recentMessages.length > 0 || 
+                 activitySummary.recentTaskUpdates.length > 0 ||
+                 activitySummary.recentBid ? (
+                  <div className="space-y-4">
+                    {activitySummary.recentMessages.map((message) => (
+                      <div key={message.id} className="flex items-start gap-4 rounded-lg border p-4">
+                        <MessageSquare className="mt-1 h-5 w-5 text-blue-500" />
+                        <div>
+                          <p className="font-medium">New message from {message.sender?.name || 'Poster'}</p>
+                          <p className="line-clamp-1 text-sm text-muted-foreground">{message.content}</p>
+                          <p className="mt-1 text-xs text-muted-foreground">{formatTimestamp(message.createdAt)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {activitySummary.recentTaskUpdates.map((task) => (
+                      <div key={task.id} className="flex items-start gap-4 rounded-lg border p-4">
+                        <Clock className="mt-1 h-5 w-5 text-yellow-500" />
+                        <div>
+                          <p className="font-medium">Task update</p>
+                          <p className="line-clamp-1 text-sm text-muted-foreground">
+                            {task.title} status updated to {task.status.toLowerCase().replace('_', ' ')}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">{formatTimestamp(task.updatedAt)}</p>
+                        </div>
+                      </div>
+                    ))}
+                    
+                    {activitySummary.recentBid && (
+                      <div className="flex items-start gap-4 rounded-lg border p-4">
+                        <Briefcase className="mt-1 h-5 w-5 text-green-500" />
+                        <div>
+                          <p className="font-medium">Bid placed</p>
+                          <p className="line-clamp-1 text-sm text-muted-foreground">
+                            You bid ${activitySummary.recentBid.bidAmount.toFixed(2)} on {activitySummary.recentBid.assignment.title}
+                          </p>
+                          <p className="mt-1 text-xs text-muted-foreground">{formatTimestamp(activitySummary.recentBid.createdAt)}</p>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                </div>
-                <div className="flex justify-between pb-2 border-b">
-                  <span className="text-sm font-medium">Reviews</span>
-                  <span>12 reviews</span>
-                </div>
-                <div className="flex justify-between pb-2 border-b">
-                  <span className="text-sm font-medium">Completed Tasks</span>
-                  <span>8 tasks</span>
-                </div>
-                <div className="flex justify-between pb-2 border-b">
-                  <span className="text-sm font-medium">Success Rate</span>
-                  <span>95%</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+                ) : (
+                  <div className="flex justify-center py-8">
+                    <p className="text-muted-foreground">No recent activity</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </>
+        )}
       </div>
     </DashboardLayout>
   )

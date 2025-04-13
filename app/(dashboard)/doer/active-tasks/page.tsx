@@ -1,16 +1,16 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { getDoerTasks } from "@/actions/utility/task-utility"
+import { getUserId } from "@/actions/utility/user-utilit"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import {
   AlertCircle,
   CheckCircle,
@@ -22,13 +22,10 @@ import {
   Loader2,
   MessageSquare,
   Search,
-  Settings,
-  User,
+  User
 } from "lucide-react"
 import Link from "next/link"
-import { getUserId } from "@/actions/utility/user-utilit"
-import { AssignmentStatus } from "@prisma/client"
-import { getDoerTasks } from "@/actions/utility/task-utility"
+import { useEffect, useState } from "react"
 
 // Define interfaces for task data
 interface TaskData {
@@ -39,7 +36,7 @@ interface TaskData {
   budget: number;
   deadline: Date;
   status: string;
-  progress: number;
+  progress?: number;
   doerId?: string | null;
   posterId?: string;
   createdAt: Date;
@@ -56,7 +53,7 @@ interface TaskData {
 
 const navItems = [
   {
-    href: "/doer/dashboard",
+    href: "/doer",
     label: "Dashboard",
     icon: Home,
   },
@@ -75,16 +72,7 @@ const navItems = [
     label: "Available Tasks",
     icon: Search,
   },
-  {
-    href: "/doer/profile",
-    label: "Profile",
-    icon: User,
-  },
-  {
-    href: "/doer/settings",
-    label: "Settings",
-    icon: Settings,
-  },
+
 ]
 
 export default function ActiveTasks() {
@@ -153,8 +141,6 @@ export default function ActiveTasks() {
         return [...taskList].sort((a, b) => a.budget - b.budget)
       case "deadline":
         return [...taskList].sort((a, b) => new Date(a.deadline).getTime() - new Date(b.deadline).getTime())
-      case "progress":
-        return [...taskList].sort((a, b) => b.progress - a.progress)
       default:
         return taskList
     }
@@ -246,7 +232,7 @@ export default function ActiveTasks() {
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-lg">In Progress</CardTitle>
-              <CardDescription>Tasks you're currently working on</CardDescription>
+              <CardDescription>Tasks you are currently working on</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="text-3xl font-bold">{inProgressTasks.length}</div>
@@ -312,7 +298,6 @@ export default function ActiveTasks() {
                     <SelectItem value="oldest">Oldest First</SelectItem>
                     <SelectItem value="budget-high">Budget: High to Low</SelectItem>
                     <SelectItem value="budget-low">Budget: Low to High</SelectItem>
-                    <SelectItem value="progress">Progress</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -344,14 +329,6 @@ export default function ActiveTasks() {
                       <CardDescription className="line-clamp-1">{task.description}</CardDescription>
                     </CardHeader>
                     <CardContent className="pb-2">
-                      <div className="mb-4">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span>Progress</span>
-                          <span>{task.progress}%</span>
-                        </div>
-                        <Progress value={task.progress} className="h-2" />
-                      </div>
-
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
@@ -450,19 +427,11 @@ export default function ActiveTasks() {
                       <CardDescription className="line-clamp-1">{task.description}</CardDescription>
                     </CardHeader>
                     <CardContent className="pb-2">
-                      <div className="mb-4">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span>Progress</span>
-                          <span>{task.progress}%</span>
-                        </div>
-                        <Progress value={task.progress} className="h-2" />
-                      </div>
-
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
                             <DollarSign className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm font-medium">Budget:</span>
+                            <span className="text-sm font-me dium">Budget:</span>
                             <span className="text-sm">${task.budget}</span>
                           </div>
                           <div className="flex items-center gap-2">
@@ -552,14 +521,6 @@ export default function ActiveTasks() {
                       <CardDescription className="line-clamp-1">{task.description}</CardDescription>
                     </CardHeader>
                     <CardContent className="pb-2">
-                      <div className="mb-4">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span>Progress</span>
-                          <span>{task.progress}%</span>
-                        </div>
-                        <Progress value={task.progress} className="h-2" />
-                      </div>
-
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">
@@ -646,14 +607,6 @@ export default function ActiveTasks() {
                       <CardDescription className="line-clamp-1">{task.description}</CardDescription>
                     </CardHeader>
                     <CardContent className="pb-2">
-                      <div className="mb-4">
-                        <div className="mb-1 flex items-center justify-between text-xs">
-                          <span>Progress</span>
-                          <span>{task.progress}%</span>
-                        </div>
-                        <Progress value={task.progress} className="h-2" />
-                      </div>
-
                       <div className="grid gap-4 md:grid-cols-2">
                         <div className="space-y-2">
                           <div className="flex items-center gap-2">

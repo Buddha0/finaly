@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "./../prisma/generated/client"
+}
+
+// prisma/schema.prisma
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  // uncomment next line if you use Prisma <5.10
+  // directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+enum Role {
+  POSTER
+  DOER
+  ADMIN
+}
+
+enum AssignmentStatus {
+  OPEN
+  ASSIGNED
+  IN_PROGRESS
+  UNDER_REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  COMPLETED
+  REFUNDED
+  DISPUTED
+  RELEASED
+}
+
+enum DisputeStatus {
+  OPEN
+  RESOLVED_REFUND
+  RESOLVED_RELEASE
+  CANCELLED
+}
+
+model User {
+  id                     String   @id
+  name                   String?
+  email                  String?  @unique
+  image                  String?
+  role                   Role     @default(DOER)
+  bio                    String?  @db.Text
+  skills                 String?  @db.Text
+  rating                 Float?   @default(0)
+  citizenshipPhotos      Json? // Store array of photo URLs
+  verificationStatus     String?  @default("pending") // pending, verified, rejected
+  rejectionReason        String?  @db.Text // Stores the reason why verification was rejected
+  accountBalance         Float    @default(0)
+  stripeConnectAccountId String? // Stripe Connect Express account ID
+  stripeAccountVerified  Boolean? @default(false) // Whether the Stripe account is verified
+  clerkId                String? // Clerk.dev user ID for auth
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  // Relationships
+  postedAssignments   Assignment[] @relation("PostedAssignments")
+  acceptedAssignments Assignment[] @relation("AcceptedAssignments")
+  submissions         Submission[]
+  bids                Bid[]
+  reviews             Review[]
+  receivedReviews     Review[]     @relation("ReceivedReviews")
+  messages            Message[]    @relation("SentMessages")
+  receivedMessages    Message[]    @relation("ReceivedMessages")
+
+  // New payment relationships
+  sentPayments     Payment[] @relation("SentPayments")
+  receivedPayments Payment[] @relation("ReceivedPayments")
+  disputes         Dispute[] @relation("InitiatedDisputes")
+  resolvedDisputes Dispute[] @relation("ResolvedDisputes")
+}
+
+model Assignment {
+  id          String           @id @default(cuid())
+  title       String
+  description String           @db.Text
+  category    String
+  budget      Float
+  deadline    DateTime
+  priority    String
+  attachments Json?
+  additional  String?          @db.Text
+  status      AssignmentStatus @default(OPEN)
+
+  // Relationships
+  posterId String
+  poster   User   @relation("PostedAssignments", fields: [posterId], references: [id])
+
+  doerId String?
+  doer   User?   @relation("AcceptedAssignments", fields: [doerId], references: [id])
+
+  // Stripe and bid related fields
+  stripePaymentIntentId String? // Stripe payment intent ID
+  acceptedBidId         String? // ID of the accepted bid
+
+  submissions Submission[]
+  bids        Bid[]
+  reviews     Review[]
+  messages    Message[]
+  payment     Payment? // New one-to-one relation with Payment
+  disputes    Dispute[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([posterId])
+  @@index([doerId])
+}
+
+// New Bid model for doer offers before assignment
+model Bid {
+  id        String @id @default(cuid())
+  content   String @db.Text
+  bidAmount Float
+  status    String @default("pending") // pending, accepted, rejected
+
+  // Relationships
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([userId])
+}
+
+// Updated Submission model for actual completed work
+model Submission {
+  id          String  @id @default(cuid())
+  content     String  @db.Text
+  attachments Json?
+  status      String  @default("pending") // pending, approved, rejected
+  feedback    String? @db.Text
+
+  // Relationships
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([userId])
+}
+
+model Review {
+  id      String  @id @default(cuid())
+  rating  Float
+  comment String? @db.Text
+
+  // Relationships
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  reviewerId String
+  reviewer   User   @relation(fields: [reviewerId], references: [id])
+
+  receiverId String
+  receiver   User   @relation("ReceivedReviews", fields: [receiverId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([reviewerId])
+  @@index([receiverId])
+}
+
+model Message {
+  id       String  @id @default(cuid())
+  content  String  @db.Text
+  isRead   Boolean @default(false)
+  fileUrls Json? // Store array of file URLs
+
+  // Relationships
+  assignmentId String?
+  assignment   Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+
+  senderId String
+  sender   User   @relation("SentMessages", fields: [senderId], references: [id])
+
+  receiverId String
+  receiver   User   @relation("ReceivedMessages", fields: [receiverId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  amount          Float
+  status          PaymentStatus @default(PENDING)
+  stripePaymentId String? // For linking with Stripe payment
+  stripeRefundId  String? // For tracking refunds
+
+  // Relationships
+  assignmentId String     @unique // One-to-one with Assignment
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  senderId String // Poster
+  sender   User   @relation("SentPayments", fields: [senderId], references: [id])
+
+  receiverId String // Doer
+  receiver   User   @relation("ReceivedPayments", fields: [receiverId], references: [id])
+
+  dispute Dispute? // Optional relation to dispute
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([senderId])
+  @@index([receiverId])
+}
+
+model Dispute {
+  id         String        @id @default(cuid())
+  reason     String        @db.Text
+  evidence   Json? // Store links to evidence files
+  status     DisputeStatus @default(OPEN)
+  resolution String?       @db.Text // Admin's resolution notes
+
+  // Relationships
+  assignmentId String
+  assignment   Assignment @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+
+  paymentId String  @unique // One-to-one with Payment
+  payment   Payment @relation(fields: [paymentId], references: [id])
+
+  initiatorId String // User who started the dispute
+  initiator   User   @relation("InitiatedDisputes", fields: [initiatorId], references: [id])
+
+  resolvedById String? // Admin who resolved the dispute
+  resolvedBy   User?   @relation("ResolvedDisputes", fields: [resolvedById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assignmentId])
+  @@index([paymentId])
+  @@index([initiatorId])
+  @@index([resolvedById])
+}

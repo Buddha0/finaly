@@ -1,24 +1,37 @@
 "use client"
 
-import { useState, useCallback, useEffect } from "react"
-import { useUser } from "@clerk/nextjs"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
+import { getUserVerificationStatus, uploadCitizenshipDocument } from "@/actions/upload-citizenship"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { UploadButton } from "@/utils/uploadthing"
-import { Loader2, AlertTriangle, CheckCircle, Upload, FileWarning, X, ChevronLeft, ChevronRight } from "lucide-react"
+import { useUser } from "@clerk/nextjs"
+import { AlertTriangle, CheckCircle, ChevronLeft, ChevronRight, FileWarning, Loader2, Upload } from "lucide-react"
 import Image from "next/image"
-import { uploadCitizenshipDocument, getUserVerificationStatus } from "@/actions/upload-citizenship"
+import { useCallback, useEffect, useState } from "react"
 import { toast } from "sonner"
+
+// Define interfaces for the verification result data
+interface VerificationData {
+  hasDocument: boolean;
+  verificationStatus: string | null;
+  documentUrls: string[];
+  rejectionReason?: string | null;
+}
+
+interface VerificationResult {
+  success: boolean;
+  data?: VerificationData;
+  error?: string;
+}
 
 export function VerificationCard() {
   const { user } = useUser()
   const [isLoading, setIsLoading] = useState(true)
-  const [isUploading, setIsUploading] = useState(false)
   const [verificationStatus, setVerificationStatus] = useState<string | null>("pending")
   const [documentUrls, setDocumentUrls] = useState<string[]>([])
   const [currentPhotoIndex, setCurrentPhotoIndex] = useState(0)
-  const [result, setResult] = useState<any>(null)
+  const [result, setResult] = useState<VerificationResult | null>(null)
   
   // Fetch current verification status
   const fetchVerificationStatus = useCallback(async () => {
@@ -33,7 +46,7 @@ export function VerificationCard() {
         setDocumentUrls(result.data.documentUrls || [])
         setResult(result)
       }
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error fetching verification status:", error)
     } finally {
       setIsLoading(false)
@@ -50,7 +63,7 @@ export function VerificationCard() {
     if (!user?.id || !res || res.length === 0) return
     
     try {
-      setIsUploading(true)
+
       
       // If multiple files are selected, they should replace existing ones
       const replaceExisting = res.length > 1;
@@ -78,12 +91,10 @@ export function VerificationCard() {
       await fetchVerificationStatus()
       toast.success("Documents uploaded successfully")
       
-    } catch (error) {
+    } catch (error: unknown) {
       console.error("Error handling upload:", error)
       toast.error("An error occurred while uploading documents")
-    } finally {
-      setIsUploading(false)
-    }
+    } 
   }
   
   // Navigate through photos
@@ -144,8 +155,7 @@ export function VerificationCard() {
             <FileWarning className="h-4 w-4 text-yellow-600" />
             <AlertTitle className="text-yellow-600">Pending Verification</AlertTitle>
             <AlertDescription>
-              Your documents have been submitted and are pending admin review. 
-              You'll be notified once verified.
+           
               {documentUrls.length < 3 && (
                 <p className="text-xs mt-1">
                   You can upload up to {3 - documentUrls.length} more document{documentUrls.length < 2 ? 's' : ''}.
@@ -269,4 +279,4 @@ export function VerificationCard() {
       </CardFooter>
     </Card>
   )
-} 
+}

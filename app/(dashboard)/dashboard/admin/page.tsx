@@ -1,17 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { getAdminDashboardStats } from "@/actions/admin-stats"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { StatsCard } from "@/components/stats-card"
-import { ClipboardCheck, Eye, Home, ShieldCheck, Users, X, Check, ChevronLeft, ChevronRight } from "lucide-react"
-import Image from "next/image"
-import { Badge } from "@/components/ui/badge"
-import { verifyUser } from "@/actions/verify-user"
-import { toast } from "sonner"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { useUser } from "@clerk/nextjs"
+import { ClipboardCheck, Gavel, Home, ShieldCheck, Users } from "lucide-react"
+import { useEffect, useState } from "react"
 
 // Admin navigation items
 const navItems = [
@@ -29,75 +24,39 @@ const navItems = [
     href: "/dashboard/admin/users",
     label: "Users",
     icon: Users,
+  },
+  {
+    href: "/dashboard/admin/disputes",
+    label: "Disputes",
+    icon: Gavel,
   }
 ]
 
-// Interface for pending verifications
-interface UserVerification {
-  id: string
-  name: string
-  email: string
-  role: string
-  citizenshipPhotos: string[]
-  verificationStatus: string
-  submittedAt: string
-}
 
 export default function AdminDashboard() {
   const { user } = useUser()
-  const [pendingVerifications, setPendingVerifications] = useState<UserVerification[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [photoIndices, setPhotoIndices] = useState<Record<string, number>>({})
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    verifiedUsers: 0,
+    activeAssignments: 0,
+    openDisputes: 0,
+  })
+  const [loading, setLoading] = useState(true)
 
-  // Function to handle photo navigation
-  const navigatePhoto = (userId: string, direction: 'next' | 'prev', maxPhotos: number) => {
-    setPhotoIndices(prev => {
-      const currentIndex = prev[userId] || 0;
-      let newIndex;
-      
-      if (direction === 'next') {
-        newIndex = (currentIndex + 1) % maxPhotos;
-      } else {
-        newIndex = (currentIndex - 1 + maxPhotos) % maxPhotos;
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const data = await getAdminDashboardStats()
+        setStats(data)
+      } catch (error) {
+        console.error("Failed to fetch admin stats:", error)
+      } finally {
+        setLoading(false)
       }
-      
-      return {
-        ...prev,
-        [userId]: newIndex
-      };
-    });
-  };
-
-  // Get current photo index for a user
-  const getCurrentPhotoIndex = (userId: string) => {
-    return photoIndices[userId] || 0;
-  };
-
-  // Handle verification status change
-  const handleVerification = async (userId: string, status: "verified" | "rejected") => {
-    try {
-      // Update verification status
-      const result = await verifyUser({ userId, status })
-      
-      if (result.success) {
-        // Update local state to reflect the change
-        setPendingVerifications(prev => 
-          prev.map(user => 
-            user.id === userId 
-              ? { ...user, verificationStatus: status } 
-              : user
-          )
-        )
-        
-        toast.success(`User ${status === "verified" ? "verified" : "rejected"} successfully`)
-      } else {
-        toast.error(result.error || "Failed to update verification status")
-      }
-    } catch (error) {
-      console.error("Error updating verification status:", error)
-      toast.error("An error occurred while updating verification status")
     }
-  }
+
+    fetchStats()
+  }, [])
 
   return (
     <DashboardLayout navItems={navItems} userRole="admin" userName={user?.fullName || "Admin"}>
@@ -107,147 +66,51 @@ export default function AdminDashboard() {
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatsCard
-            title="Total Users"
-            value="87"
-            description="Total registered users"
-            icon={Users}
-          />
-          <StatsCard
-            title="Pending Verifications"
-            value={pendingVerifications.length.toString()}
-            description="Users awaiting verification"
-            icon={ClipboardCheck}
-          />
-          <StatsCard
-            title="Verified Users"
-            value="62"
-            description="Successfully verified users"
-            icon={ShieldCheck}
-          />
-          <StatsCard 
-            title="Active Assignments"
-            value="35"
-            description="Currently active assignments"
-            icon={ClipboardCheck}
-          />
+          {loading ? (
+            Array(4).fill(0).map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <CardHeader className="pb-2">
+                  <div className="h-6 bg-gray-200 rounded w-1/2 mb-2"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-10 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                </CardContent>
+              </Card>
+            ))
+          ) : (
+            <>
+              <StatsCard
+                title="Total Users"
+                value={stats.totalUsers.toString()}
+                description="Total registered users"
+                icon={Users}
+              />
+              
+              <StatsCard
+                title="Verified Users"
+                value={stats.verifiedUsers.toString()}
+                description="Successfully verified users"
+                icon={ShieldCheck}
+              />
+              <StatsCard 
+                title="Active Assignments"
+                value={stats.activeAssignments.toString()}
+                description="Currently active assignments"
+                icon={ClipboardCheck}
+              />
+              
+              <StatsCard 
+                title="Open Disputes"
+                value={stats.openDisputes.toString()}
+                description="Disputes requiring attention"
+                icon={Gavel}
+              />
+            </>
+          )}
         </div>
 
-        <Tabs defaultValue="pending" className="w-full">
-          <TabsList>
-            <TabsTrigger value="pending">Pending Verifications</TabsTrigger>
-            <TabsTrigger value="verified">Verified Users</TabsTrigger>
-            <TabsTrigger value="rejected">Rejected Verifications</TabsTrigger>
-          </TabsList>
-          
-          <TabsContent value="pending" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {isLoading ? (
-                <p>Loading verification requests...</p>
-              ) : pendingVerifications.length === 0 ? (
-                <p>No pending verification requests</p>
-              ) : (
-                pendingVerifications.map(verification => {
-                  const currentIndex = getCurrentPhotoIndex(verification.id);
-                  const photos = verification.citizenshipPhotos || [];
-                  
-                  return (
-                    <Card key={verification.id}>
-                      <CardHeader className="pb-2">
-                        <div className="flex justify-between items-center">
-                          <CardTitle>{verification.name}</CardTitle>
-                          <Badge>{verification.role}</Badge>
-                        </div>
-                        <CardDescription>{verification.email}</CardDescription>
-                      </CardHeader>
-                      <CardContent className="pb-2">
-                        {photos.length > 0 ? (
-                          <div className="mb-4">
-                            <div className="aspect-video relative rounded-md overflow-hidden border">
-                              <Image 
-                                src={photos[currentIndex]} 
-                                alt="Citizenship document"
-                                fill
-                                className="object-cover"
-                              />
-                              <Button 
-                                variant="outline" 
-                                size="icon" 
-                                className="absolute top-2 right-2 bg-white/70 hover:bg-white z-10"
-                                onClick={() => window.open(photos[currentIndex], '_blank')}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                              
-                              {photos.length > 1 && (
-                                <div className="absolute inset-0 flex items-center justify-between px-2">
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-8 w-8 rounded-full bg-white/70 hover:bg-white/90"
-                                    onClick={() => navigatePhoto(verification.id, 'prev', photos.length)}
-                                  >
-                                    <ChevronLeft className="h-4 w-4" />
-                                  </Button>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="icon" 
-                                    className="h-8 w-8 rounded-full bg-white/70 hover:bg-white/90" 
-                                    onClick={() => navigatePhoto(verification.id, 'next', photos.length)}
-                                  >
-                                    <ChevronRight className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              )}
-                            </div>
-                            
-                            {photos.length > 1 && (
-                              <div className="flex justify-center items-center mt-2">
-                                <span className="text-xs text-muted-foreground">
-                                  Document {currentIndex + 1} of {photos.length}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="text-sm text-muted-foreground mb-4">No citizenship documents uploaded</p>
-                        )}
-                        <p className="text-sm text-muted-foreground">
-                          Submitted: {verification.submittedAt}
-                        </p>
-                      </CardContent>
-                      <CardFooter className="flex justify-between">
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleVerification(verification.id, "rejected")}
-                        >
-                          <X className="mr-2 h-4 w-4" />
-                          Reject
-                        </Button>
-                        <Button 
-                          size="sm"
-                          onClick={() => handleVerification(verification.id, "verified")}
-                        >
-                          <Check className="mr-2 h-4 w-4" />
-                          Verify
-                        </Button>
-                      </CardFooter>
-                    </Card>
-                  );
-                })
-              )}
-            </div>
-          </TabsContent>
-          
-          <TabsContent value="verified" className="mt-4">
-            <p>Display verified users here</p>
-          </TabsContent>
-          
-          <TabsContent value="rejected" className="mt-4">
-            <p>Display rejected users here</p>
-          </TabsContent>
-        </Tabs>
+        
       </div>
     </DashboardLayout>
   )

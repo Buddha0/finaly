@@ -1,60 +1,53 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { pusherServer } from '@/lib/pusher';
-import { auth } from '@clerk/nextjs/server';
+import { auth } from "@clerk/nextjs/server";
+import { NextResponse } from "next/server";
+import { pusherServer } from "@/lib/pusher";
+import prisma from "@/lib/db";
 
-export async function POST(req: NextRequest) {
+export async function POST(req: Request) {
   try {
-    // Check authentication
-    const authResult = await auth();
-    const userId = authResult.userId;
+    const { userId } = await auth();
     
     if (!userId) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return new NextResponse("Unauthorized", { status: 401 });
     }
-    
-    // Get request data
-    const { assignmentId, userId: senderId, isTyping } = await req.json();
-    
-    if (!assignmentId || !senderId) {
-      return NextResponse.json(
-        { error: 'Missing required fields' }, 
-        { status: 400 }
-      );
+
+    // Get body data
+    const body = await req.json();
+    const { assignmentId, isTyping } = body;
+
+    if (!assignmentId) {
+      return new NextResponse("Assignment ID is required", { status: 400 });
     }
-    
-    // Make sure the authenticated user matches the senderId
-    if (userId !== senderId) {
-      return NextResponse.json(
-        { error: 'User ID mismatch' }, 
-        { status: 403 }
-      );
+
+    // Verify user has access to this assignment
+    const assignment = await prisma.assignment.findUnique({
+      where: {
+        id: assignmentId,
+        OR: [
+          { posterId: userId },
+          { doerId: userId }
+        ]
+      }
+    });
+
+    if (!assignment) {
+      return new NextResponse("Assignment not found or access denied", { 
+        status: 404 
+      });
     }
-    
-    // Trigger the appropriate Pusher event
-    const event = isTyping ? 'typing-start' : 'typing-stop';
-    
-    // Add a cache-busting timestamp to ensure unique events
-    const timestamp = new Date().toISOString();
-    const eventId = `${event}-${timestamp}-${Math.random().toString(36).substring(2, 9)}`;
-    
-    console.log(`Sending ${event} event for user ${senderId} in assignment ${assignmentId}`);
+
+    // Send typing event via Pusher
+    const eventName = isTyping ? 'typing-start' : 'typing-stop';
     
     await pusherServer.trigger(
       `assignment-${assignmentId}`,
-      event,
-      {
-        userId: senderId,
-        timestamp,
-        eventId
-      }
+      eventName,
+      { userId }
     );
-    
+
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Error handling typing status:', error);
-    return NextResponse.json(
-      { error: 'Failed to process typing status' }, 
-      { status: 500 }
-    );
+    console.error("[TYPING_API_ERROR]", error);
+    return new NextResponse("Internal error", { status: 500 });
   }
 } 

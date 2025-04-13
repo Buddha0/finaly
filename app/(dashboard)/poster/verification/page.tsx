@@ -1,10 +1,9 @@
 "use client"
 
-import { useUser } from "@clerk/nextjs"
-import { DashboardLayout } from "@/components/dashboard-layout"
 import { VerificationCard } from "@/app/(dashboard)/components/verification-card"
-import { Home, FilePlus, ListChecks, ShieldCheck } from "lucide-react"
-import { useEffect } from "react"
+import { DashboardLayout } from "@/components/dashboard-layout"
+import { useUser } from "@clerk/nextjs"
+import { FilePlus, Home, ListChecks, ShieldCheck } from "lucide-react"
 
 const navItems = [
   {
@@ -56,7 +55,7 @@ export default function PosterVerificationPage() {
           </ul>
           <p className="mt-4 text-sm text-muted-foreground">
             Your document will be reviewed by our admin team, and your verification status will 
-            be updated within 24-48 hours. Once verified, you'll have full access to all platform features.
+            be updated within 24-48 hours. Once verified, you will have full access to all platform features.
           </p>
         </div>
       </div>

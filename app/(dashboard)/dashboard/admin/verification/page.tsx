@@ -1,18 +1,18 @@
 "use client"
 
-import { useEffect, useState, useRef } from "react"
-import { useUser } from "@clerk/nextjs"
+import { getPendingVerifications, getRejectedUsers, getVerifiedUsers, verifyUser } from "@/actions/verify-user"
 import { DashboardLayout } from "@/components/dashboard-layout"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Button } from "@/components/ui/button"
-import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Eye, Home, ShieldCheck, Users, X, Check, AlertCircle, ChevronLeft, ChevronRight } from "lucide-react"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
+import { useUser } from "@clerk/nextjs"
+import { Check, ChevronLeft, ChevronRight, Eye, Home, ShieldCheck, Users, X } from "lucide-react"
 import Image from "next/image"
-import { verifyUser, getPendingVerifications, getVerifiedUsers, getRejectedUsers } from "@/actions/verify-user"
+import { useState, useEffect, useCallback } from "react"
 import { toast } from "sonner"
 
 // Admin navigation items
@@ -81,7 +81,7 @@ export default function VerificationPage() {
     return photoIndices[userId] || 0;
   };
 
-  const fetchUsers = async () => {
+  const fetchUsers = useCallback(async () => {
     setIsLoading(true)
     
     try {
@@ -114,12 +114,12 @@ export default function VerificationPage() {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [activeTab]);
 
   // Fetch initial data
   useEffect(() => {
-    fetchUsers()
-  }, [activeTab])
+    fetchUsers();
+  }, [activeTab, fetchUsers]);
 
   // Handle verification status change
   const handleVerification = async (userId: string, status: "verified" | "rejected", reason?: string) => {

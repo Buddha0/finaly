@@ -1,14 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { CheckCircle2, AlertCircle } from "lucide-react";
+import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 
-export default function PaymentSuccessPage() {
+function PaymentSuccessContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const taskId = searchParams.get("taskId");
@@ -85,8 +85,8 @@ export default function PaymentSuccessPage() {
       // Redirect after 5 seconds
       const redirectTimeout = setTimeout(() => {
         const redirectPath = taskId 
-          ? `/dashboard/poster/tasks/${taskId}` 
-          : "/dashboard/poster";
+          ? `/poster/tasks/${taskId}` 
+          : "/poster";
         
         router.push(redirectPath);
       }, 5000);
@@ -177,5 +177,32 @@ export default function PaymentSuccessPage() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+// Loading component for Suspense fallback
+function LoadingPage() {
+  return (
+    <div className="flex items-center justify-center min-h-screen bg-muted/30">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardHeader className="text-center">
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          </div>
+          <CardTitle className="text-2xl font-bold">Processing Payment</CardTitle>
+          <CardDescription>
+            Please wait while we process your payment...
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    </div>
+  );
+}
+
+export default function PaymentSuccessPage() {
+  return (
+    <Suspense fallback={<LoadingPage />}>
+      <PaymentSuccessContent />
+    </Suspense>
   );
 } 

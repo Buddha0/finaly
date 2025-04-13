@@ -1,13 +1,11 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Progress } from "@/components/ui/progress"
 import { Clock, DollarSign, FileText, MessageSquare } from "lucide-react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
-export type TaskStatus = "open" | "in-progress" | "completed" | "pending-review" | "assigned"
+import { TaskStatus } from "@/types/doer-dashboard"
 
 export interface TaskCardProps {
   id: string
@@ -15,7 +13,7 @@ export interface TaskCardProps {
   description: string
   category: string
   budget: number
-  deadline: string
+  deadline: string | Date
   status: TaskStatus
   progress?: number
   bidsCount?: number
@@ -34,7 +32,6 @@ export function TaskCard({
   budget,
   deadline,
   status,
-  progress = 0,
   bidsCount = 0,
   doerName,
   posterName,
@@ -50,6 +47,7 @@ export function TaskCard({
     completed: "bg-green-500",
     "pending-review": "bg-purple-500",
     assigned: "bg-indigo-500",
+    cancelled: "bg-red-500",
   }
 
   const statusLabels: Record<TaskStatus, string> = {
@@ -58,9 +56,10 @@ export function TaskCard({
     completed: "Completed",
     "pending-review": "Pending Review",
     assigned: "Assigned",
+    cancelled: "Cancelled",
   }
 
-  const deadlineDate = new Date(deadline)
+  const deadlineDate = deadline instanceof Date ? deadline : new Date(deadline)
   const isDeadlineSoon = deadlineDate.getTime() - Date.now() < 86400000 * 3 // 3 days
 
   const handleViewDetails = () => {
@@ -110,16 +109,6 @@ export function TaskCard({
       <CardContent className="pb-2">
         <p className="mb-3 line-clamp-2 text-sm text-muted-foreground">{description}</p>
 
-        {status !== "open" && (
-          <div className="mb-3">
-            <div className="mb-1 flex items-center justify-between text-xs">
-              <span>Progress</span>
-              <span>{progress}%</span>
-            </div>
-            <Progress value={progress} className="h-2" />
-          </div>
-        )}
-
         <div className="grid grid-cols-2 gap-2 text-sm">
           <div className="flex items-center gap-1">
             <DollarSign className="h-3 w-3 text-muted-foreground" />
@@ -127,7 +116,7 @@ export function TaskCard({
           </div>
           <div className="flex items-center gap-1">
             <Clock className={`h-3 w-3 ${isDeadlineSoon ? "text-red-500" : "text-muted-foreground"}`} />
-            <span className={isDeadlineSoon ? "text-red-500" : ""}>{new Date(deadline).toLocaleDateString()}</span>
+            <span className={isDeadlineSoon ? "text-red-500" : ""}>{deadlineDate.toLocaleDateString()}</span>
           </div>
         </div>
 

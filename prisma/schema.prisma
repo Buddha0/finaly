@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  output   = "./../prisma/generated/client"
 }
 
 // prisma/schema.prisma
@@ -40,20 +41,23 @@ enum DisputeStatus {
 }
 
 model User {
-  id                String   @id
-  name              String?
-  email             String?  @unique
-  image             String?
-  role              Role     @default(DOER)
-  bio               String?  @db.Text
-  skills            String?  @db.Text
-  rating            Float?   @default(0)
-  citizenshipPhotos Json?    // Store array of photo URLs
-  verificationStatus String?  @default("pending") // pending, verified, rejected
-  rejectionReason   String?  @db.Text // Stores the reason why verification was rejected
-  accountBalance    Float    @default(0)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  id                     String   @id
+  name                   String?
+  email                  String?  @unique
+  image                  String?
+  role                   Role     @default(DOER)
+  bio                    String?  @db.Text
+  skills                 String?  @db.Text
+  rating                 Float?   @default(0)
+  citizenshipPhotos      Json?    // Store array of photo URLs
+  verificationStatus     String?  @default("pending") // pending, verified, rejected
+  rejectionReason        String?  @db.Text // Stores the reason why verification was rejected
+  accountBalance         Float    @default(0)
+  stripeConnectAccountId String?  // Stripe Connect Express account ID
+  stripeAccountVerified  Boolean? @default(false) // Whether the Stripe account is verified
+  clerkId                String?  // Clerk.dev user ID for auth
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
 
   // Relationships
   postedAssignments   Assignment[]    @relation("PostedAssignments")
@@ -73,33 +77,37 @@ model User {
 }
 
 model Assignment {
-  id            String           @id @default(cuid())
-  title         String
-  description   String           @db.Text
-  category      String
-  budget        Float
-  deadline      DateTime
-  priority      String
-  attachments   Json?
-  additional    String?          @db.Text
-  status        AssignmentStatus @default(OPEN)
+  id                  String           @id @default(cuid())
+  title               String
+  description         String           @db.Text
+  category            String
+  budget              Float
+  deadline            DateTime
+  priority            String
+  attachments         Json?
+  additional          String?          @db.Text
+  status              AssignmentStatus @default(OPEN)
   
   // Relationships
-  posterId      String
-  poster        User             @relation("PostedAssignments", fields: [posterId], references: [id])
+  posterId            String
+  poster              User             @relation("PostedAssignments", fields: [posterId], references: [id])
   
-  doerId        String?
-  doer          User?            @relation("AcceptedAssignments", fields: [doerId], references: [id])
+  doerId              String?
+  doer                User?            @relation("AcceptedAssignments", fields: [doerId], references: [id])
   
-  submissions   Submission[]
-  bids          Bid[]
-  reviews       Review[]
-  messages      Message[]
-  payment       Payment?         // New one-to-one relation with Payment
-  disputes      Dispute[]
+  // Stripe and bid related fields
+  stripePaymentIntentId String?        // Stripe payment intent ID
+  acceptedBidId         String?        // ID of the accepted bid
   
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
+  submissions         Submission[]
+  bids                Bid[]
+  reviews             Review[]
+  messages            Message[]
+  payment             Payment?         // New one-to-one relation with Payment
+  disputes            Dispute[]
+  
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
 
   @@index([posterId])
   @@index([doerId])
@@ -175,6 +183,7 @@ model Message {
   id            String    @id @default(cuid())
   content       String    @db.Text
   isRead        Boolean   @default(false)
+  fileUrls      Json?     // Store array of file URLs
   
   // Relationships
   assignmentId  String?

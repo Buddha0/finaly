@@ -1,6 +1,5 @@
 "use client"
 
-import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -13,12 +12,8 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { format, addDays } from "date-fns"
-import { CalendarIcon, DollarSign, Info, Loader2 } from "lucide-react"
-import { cn } from "@/lib/utils"
+import { DollarSign, Loader2 } from "lucide-react"
+import { useState } from "react"
 import { toast } from "sonner"
 
 interface PlaceBidDialogProps {
@@ -116,7 +111,7 @@ export function PlaceBidDialog({
               />
             </div>
             <p className="text-xs text-muted-foreground">
-              Poster's budget: ${taskBudget.toFixed(2)}
+              Poster budget: ${taskBudget.toFixed(2)}
             </p>
           </div>
 

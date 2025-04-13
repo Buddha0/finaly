@@ -1,19 +1,20 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useUser } from "@clerk/nextjs"
+import { RoleSwitcher } from "@/app/(dashboard)/components/role-switcher"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { StatsCard } from "@/components/stats-card"
 import { TaskCard } from "@/components/task-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { useUser } from "@clerk/nextjs"
 import { Role } from "@prisma/client"
-import { RoleSwitcher } from "@/app/(dashboard)/components/role-switcher"
-import { CheckCircle, Clock, FileText, FilePlus, Home, ListChecks, MessageSquare, ShieldCheck } from "lucide-react"
-import Link from "next/link"
-import { toast } from "sonner"
+import { formatDistanceToNow } from "date-fns"
+import { CheckCircle, Clock, FilePlus, FileText, Home, ListChecks, MessageSquare, ShieldCheck } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useEffect, useState, useRef } from "react"
+import { toast } from "sonner"
+import { getPosterBids, getPosterStats, getPosterTasks, getTaskActivities } from "./actions"
 
 const navItems = [
   {
@@ -38,48 +39,32 @@ const navItems = [
   }
 ]
 
-// Mock data
-const recentTasks = [
-  {
-    id: "1",
-    title: "Research Paper on Renewable Energy",
-    description: "Need a 10-page research paper on renewable energy sources and their impact on climate change.",
-    category: "Research",
-    budget: 120,
-    deadline: "2023-12-15",
-    status: "in-progress" as const,
-    progress: 65,
-    doerName: "John Smith",
-    messagesCount: 5,
-  },
-  {
-    id: "2",
-    title: "Mathematics Assignment - Calculus",
-    description: "Need help with calculus problems for my university course.",
-    category: "Mathematics",
-    budget: 50,
-    deadline: "2023-12-10",
-    status: "open" as const,
-    bidsCount: 3,
-  },
-  {
-    id: "3",
-    title: "Programming Project - Web Scraper",
-    description: "Need a Python web scraper that can extract data from e-commerce websites.",
-    category: "Programming",
-    budget: 200,
-    deadline: "2023-12-20",
-    status: "pending-review" as const,
-    progress: 100,
-    doerName: "Alice Johnson",
-    messagesCount: 12,
-  },
-]
+function LoadingCard() {
+  return (
+    <Card className="animate-pulse">
+      <CardHeader className="pb-2">
+        <div className="h-6 bg-gray-200 rounded w-2/3 mb-2"></div>
+        <div className="h-4 bg-gray-200 rounded w-1/3"></div>
+      </CardHeader>
+      <CardContent>
+        <div className="h-20 bg-gray-200 rounded"></div>
+      </CardContent>
+    </Card>
+  )
+}
+
+
 
 export default function PosterDashboard() {
   const { user } = useUser()
   const [currentRole, setCurrentRole] = useState<Role>("POSTER")
   const router = useRouter()
+  const [stats, setStats] = useState<any>(null)
+  const [tasks, setTasks] = useState<any[]>([])
+  const [bids, setBids] = useState<any[]>([])
+  const [activities, setActivities] = useState<any[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState("")
 
   // Get user's role from metadata
   useEffect(() => {
@@ -88,19 +73,57 @@ export default function PosterDashboard() {
     }
   }, [user])
 
-  // Show welcome toast when component mounts
+  // Fetch data from server actions
   useEffect(() => {
+    const fetchDashboardData = async () => {
+      try {
+        setIsLoading(true)
+        setError("")
+        
+        // Fetch all data in parallel
+        const [statsData, tasksData, bidsData, activitiesData] = await Promise.all([
+          getPosterStats(),
+          getPosterTasks(),
+          getPosterBids(),
+          getTaskActivities()
+        ])
+        
+        setStats(statsData)
+        setTasks(tasksData)
+        setBids(bidsData)
+        setActivities(activitiesData)
+      } catch (err) {
+        console.error("Error fetching dashboard data:", err)
+        setError("Failed to load dashboard data. Please try again.")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
     if (user) {
-      toast.success(`Welcome back, ${user.fullName || 'Poster'}!`, {
-        description: "You're in the poster dashboard",
-      })
+      fetchDashboardData()
     }
   }, [user])
+
+  // Show welcome toast when component mounts
+  const welcomeToastShown = useRef(false);
+  useEffect(() => {
+    if (user && !welcomeToastShown.current) {
+      toast.success(`Welcome back, ${user.fullName || 'Poster'}!`, {
+        description: "You're in the poster dashboard",
+      });
+      welcomeToastShown.current = true;
+    }
+  }, [user]);
 
   const handleCreateTask = () => {
     router.push("/poster/create-task")
     toast.info("Starting a new task creation")
   }
+
+  // Filter tasks by status for the tabs
+  const pendingReviewTasks = tasks.filter(task => task.status === "pending-review") || []
+  const activeTasks = tasks.filter(task => task.status === "in-progress") || []
 
   return (
     <DashboardLayout navItems={navItems} userRole="poster" userName={user?.fullName || "Sarah Williams"}>
@@ -116,29 +139,52 @@ export default function PosterDashboard() {
         {/* Role Switcher */}
         <RoleSwitcher currentRole={currentRole} />
 
+        {error && <div className="p-4 mb-4 text-red-700 bg-red-100 rounded-md">{error}</div>}
+
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <StatsCard
-            title="Active Tasks"
-            value="5"
-            description="Tasks currently in progress"
-            icon={Clock}
-            trend={{ value: 10, isPositive: true }}
-          />
-          <StatsCard
-            title="Completed Tasks"
-            value="12"
-            description="Successfully completed tasks"
-            icon={CheckCircle}
-            trend={{ value: 25, isPositive: true }}
-          />
-          <StatsCard
-            title="Pending Reviews"
-            value="2"
-            description="Tasks awaiting your review"
-            icon={FileText}
-            trend={{ value: 5, isPositive: false }}
-          />
-          <StatsCard title="Messages" value="8" description="Unread messages from doers" icon={MessageSquare} />
+          {isLoading ? (
+            Array(4).fill(0).map((_, i) => (
+              <Card key={i} className="animate-pulse">
+                <CardHeader className="pb-2">
+                  <div className="h-6 bg-gray-200 rounded w-1/2 mb-2"></div>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-10 bg-gray-200 rounded mb-2"></div>
+                  <div className="h-4 bg-gray-200 rounded w-2/3"></div>
+                </CardContent>
+              </Card>
+            ))
+          ) : stats ? (
+            <>
+              <StatsCard
+                title="Active Tasks"
+                value={stats.activeTasks.toString()}
+                description="Tasks currently in progress"
+                icon={Clock}
+                trend={{ value: 0, isPositive: true }}
+              />
+              <StatsCard
+                title="Completed Tasks"
+                value={stats.completedTasks.toString()}
+                description="Successfully completed tasks"
+                icon={CheckCircle}
+                trend={{ value: 0, isPositive: true }}
+              />
+              <StatsCard
+                title="Pending Reviews"
+                value={stats.pendingReviews.toString()}
+                description="Tasks awaiting your review"
+                icon={FileText}
+                trend={{ value: 0, isPositive: false }}
+              />
+              <StatsCard 
+                title="Messages" 
+                value={stats.unreadMessages.toString()} 
+                description="Unread messages from doers" 
+                icon={MessageSquare} 
+              />
+            </>
+          ) : null}
         </div>
 
         <Tabs defaultValue="recent" className="w-full">
@@ -147,30 +193,63 @@ export default function PosterDashboard() {
             <TabsTrigger value="pending">Pending Review</TabsTrigger>
             <TabsTrigger value="active">Active Tasks</TabsTrigger>
           </TabsList>
+          
           <TabsContent value="recent" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentTasks.map((task) => (
-                <TaskCard key={task.id} {...task} viewType="poster" />
-              ))}
-            </div>
+            {isLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
+              </div>
+            ) : tasks.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {tasks.map((task) => (
+                  <TaskCard key={task.id} {...task} viewType="poster" />
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <p className="text-muted-foreground">No tasks found. Create your first task to get started.</p>
+                <Button onClick={handleCreateTask} className="mt-4">
+                  <FilePlus className="mr-2 h-4 w-4" />
+                  Create Task
+                </Button>
+              </div>
+            )}
           </TabsContent>
+
           <TabsContent value="pending" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentTasks
-                .filter((task) => task.status === "pending-review")
-                .map((task) => (
+            {isLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
+              </div>
+            ) : pendingReviewTasks.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {pendingReviewTasks.map((task) => (
                   <TaskCard key={task.id} {...task} viewType="poster" />
                 ))}
-            </div>
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <p className="text-muted-foreground">No tasks pending review at the moment.</p>
+              </div>
+            )}
           </TabsContent>
+
           <TabsContent value="active" className="mt-4">
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {recentTasks
-                .filter((task) => task.status === "in-progress")
-                .map((task) => (
+            {isLoading ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {Array(3).fill(0).map((_, i) => <LoadingCard key={i} />)}
+              </div>
+            ) : activeTasks.length > 0 ? (
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {activeTasks.map((task) => (
                   <TaskCard key={task.id} {...task} viewType="poster" />
                 ))}
-            </div>
+              </div>
+            ) : (
+              <div className="text-center py-10">
+                <p className="text-muted-foreground">No active tasks at the moment.</p>
+              </div>
+            )}
           </TabsContent>
         </Tabs>
 
@@ -181,38 +260,39 @@ export default function PosterDashboard() {
               <CardDescription>Latest bids on your open tasks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="font-medium">John Smith</p>
-                    <p className="text-sm text-muted-foreground">Mathematics Assignment - Calculus</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">$45</p>
-                    <p className="text-xs text-muted-foreground">2 hours ago</p>
-                  </div>
+              {isLoading ? (
+                <div className="space-y-4">
+                  {Array(3).fill(0).map((_, i) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg border p-3 animate-pulse">
+                      <div className="w-1/2">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                      </div>
+                      <div className="w-1/4 text-right">
+                        <div className="h-4 bg-gray-200 rounded w-full mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-3/4 ml-auto"></div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="font-medium">Emily Chen</p>
-                    <p className="text-sm text-muted-foreground">Mathematics Assignment - Calculus</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">$55</p>
-                    <p className="text-xs text-muted-foreground">5 hours ago</p>
-                  </div>
+              ) : bids.length > 0 ? (
+                <div className="space-y-4">
+                  {bids.map((bid) => (
+                    <div key={bid.id} className="flex items-center justify-between rounded-lg border p-3">
+                      <div>
+                        <p className="font-medium">{bid.doerName}</p>
+                        <p className="text-sm text-muted-foreground">{bid.taskTitle}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">${bid.amount}</p>
+                        <p className="text-xs text-muted-foreground">{formatDistanceToNow(new Date(bid.createdAt), { addSuffix: true })}</p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center justify-between rounded-lg border p-3">
-                  <div>
-                    <p className="font-medium">Michael Brown</p>
-                    <p className="text-sm text-muted-foreground">Mathematics Assignment - Calculus</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="font-medium">$60</p>
-                    <p className="text-xs text-muted-foreground">1 day ago</p>
-                  </div>
-                </div>
-              </div>
+              ) : (
+                <p className="text-center py-6 text-muted-foreground">No bids yet on your open tasks.</p>
+              )}
             </CardContent>
           </Card>
 
@@ -222,42 +302,58 @@ export default function PosterDashboard() {
               <CardDescription>Recent updates on your tasks</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="space-y-4">
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-200">
-                    <MessageSquare className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">New message from John Smith</p>
-                    <p className="text-sm text-muted-foreground">On &quot;Research Paper on Renewable Energy&quot;</p>
-                    <p className="text-xs text-muted-foreground">30 minutes ago</p>
-                  </div>
+              {isLoading ? (
+                <div className="space-y-4">
+                  {Array(3).fill(0).map((_, i) => (
+                    <div key={i} className="flex gap-3 rounded-lg border p-3 animate-pulse">
+                      <div className="h-8 w-8 rounded-full bg-gray-200"></div>
+                      <div className="w-full">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/4"></div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-200">
-                    <Clock className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Task progress updated</p>
-                    <p className="text-sm text-muted-foreground">
-                      &quot;Research Paper on Renewable Energy&quot; is now 65% complete
-                    </p>
-                    <p className="text-xs text-muted-foreground">2 hours ago</p>
-                  </div>
+              ) : activities.length > 0 ? (
+                <div className="space-y-4">
+                  {activities.map((activity, index) => (
+                    <div key={index} className="flex gap-3 rounded-lg border p-3">
+                      <div className={`flex h-8 w-8 items-center justify-center rounded-full 
+                        ${activity.type === 'message' 
+                          ? 'bg-blue-100 text-blue-600 dark:bg-blue-900 dark:text-blue-200' 
+                          : activity.title.includes('completed') 
+                            ? 'bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-200'
+                            : 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900 dark:text-yellow-200'
+                        }`}
+                      >
+                        {activity.type === 'message' ? (
+                          <MessageSquare className="h-4 w-4" />
+                        ) : activity.title.includes('completed') ? (
+                          <CheckCircle className="h-4 w-4" />
+                        ) : (
+                          <Clock className="h-4 w-4" />
+                        )}
+                      </div>
+                      <div>
+                        <p className="font-medium">
+                          {activity.type === 'message' 
+                            ? `New message from ${activity.actorName}` 
+                            : activity.title}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          On &quot;{activity.description}&quot;
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {formatDistanceToNow(new Date(activity.timestamp), { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex gap-3 rounded-lg border p-3">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-full bg-green-100 text-green-600 dark:bg-green-900 dark:text-green-200">
-                    <CheckCircle className="h-4 w-4" />
-                  </div>
-                  <div>
-                    <p className="font-medium">Task completed</p>
-                    <p className="text-sm text-muted-foreground">
-                      &quot;Programming Project - Web Scraper&quot; is ready for review
-                    </p>
-                    <p className="text-xs text-muted-foreground">1 day ago</p>
-                  </div>
-                </div>
-              </div>
+              ) : (
+                <p className="text-center py-6 text-muted-foreground">No recent activity.</p>
+              )}
             </CardContent>
           </Card>
         </div>

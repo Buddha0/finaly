@@ -1,21 +1,21 @@
 "use client"
 
+import { getAvailableTasks, submitBid } from "@/actions/utility/task-utility"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { PlaceBidDialog } from "@/components/place-bid-dialog"
 import { TaskCard } from "@/components/task-card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Slider } from "@/components/ui/slider"
-import { FileText, Home, ListChecks, Search, Settings, User, Loader2 } from "lucide-react"
-import { useEffect, useState, useTransition, useMemo } from "react"
-import { PlaceBidDialog } from "@/components/place-bid-dialog"
-import { getAvailableTasks, submitBid } from "@/actions/utility/task-utility"
-import { toast } from "sonner"
 import { useUser } from "@clerk/nextjs"
+import { FileText, Home, ListChecks, Loader2, Search } from "lucide-react"
+import { useEffect, useMemo, useState, useTransition } from "react"
+import { toast } from "sonner"
 
 const navItems = [
   {
-    href: "/doer/dashboard",
+    href: "/doer",
     label: "Dashboard",
     icon: Home,
   },
@@ -34,16 +34,7 @@ const navItems = [
     label: "Available Tasks",
     icon: Search,
   },
-  {
-    href: "/doer/profile",
-    label: "Profile",
-    icon: User,
-  },
-  {
-    href: "/doer/settings",
-    label: "Settings",
-    icon: Settings,
-  },
+
 ]
 
 interface Task {

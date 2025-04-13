@@ -1,20 +1,20 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { getUserTasks } from "@/actions/utility/task-utility"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { TaskCard } from "@/components/task-card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { FilePlus, Home, ListChecks, Search, X, Loader2 } from "lucide-react"
-import Link from "next/link"
-import { getUserTasks } from "@/actions/utility/task-utility"
 import { useUser } from "@clerk/nextjs"
-import { toast } from "sonner"
 import { AssignmentStatus } from "@prisma/client"
+import { FilePlus, Home, ListChecks, Loader2, Search, ShieldCheck, X } from "lucide-react"
+import Link from "next/link"
+import { useEffect, useState } from "react"
+import { toast } from "sonner"
 
 // Define types
 type UITaskStatus = "open" | "in-progress" | "pending-review" | "completed" | "assigned";
@@ -44,7 +44,6 @@ interface Task {
   budget: number;
   deadline: string;
   status: UITaskStatus;
-  progress?: number;
   doerName?: string;
   messagesCount?: number;
   bidsCount?: number;
@@ -67,6 +66,11 @@ const navItems = [
     label: "Create Task",
     icon: FilePlus,
   },
+  {
+    href: "/poster/verification",
+    label: "Verification",
+    icon: ShieldCheck,
+  }
  
   
 ]
@@ -96,7 +100,6 @@ export default function PosterTasks() {
             budget: task.budget,
             deadline: task.deadline.toISOString().split('T')[0],
             status: mapAssignmentStatusToUIStatus(task.status),
-            progress: task.progress,
             doerName: task.doerName,
             messagesCount: task.messagesCount,
             bidsCount: task.bidsCount

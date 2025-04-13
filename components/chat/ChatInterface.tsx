@@ -1,24 +1,25 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useMemo } from "react";
-import { useUser } from "@clerk/nextjs";
-import { pusherClient } from "@/lib/pusher";
-import { sendMessage } from "@/actions/send-message";
-import { getMessages } from "@/actions/get-messages";
-import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
+import { getAssignmentMessages, sendAssignmentMessage } from "@/app/actions/chat-actions";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Loader2 } from "lucide-react";
-import VideoCallButton from '@/components/videocall/VideoCallButton';
-import { useToast } from '@/components/ui/use-toast';
+import { pusherClient } from "@/lib/pusher";
+import { UploadButton } from "@/utils/uploadthing";
+import { useUser } from "@clerk/nextjs";
+import { FileIcon, Loader2, Send } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
+// Message type based on schema
 type Message = {
   id: string;
   content: string;
   senderId: string;
   receiverId: string;
   createdAt: Date;
+  fileUrls?: string;
+  isRead: boolean;
   sender: {
     id: string;
     name: string | null;
@@ -26,474 +27,553 @@ type Message = {
   };
 };
 
+// Parsed file type from fileUrls
+type FileAttachment = {
+  url: string;
+  name: string;
+  type: string;
+};
+
 interface ChatInterfaceProps {
   assignmentId: string;
   receiverId: string;
+  title?: string;
+  fullHeight?: boolean;
 }
 
-// Helper function to safely parse JSON from localStorage
-const getSavedMessages = (key: string): Message[] => {
-  if (typeof window === 'undefined') return [];
-  
-  try {
-    const saved = localStorage.getItem(key);
-    if (!saved) return [];
-    return JSON.parse(saved);
-  } catch (e) {
-    console.error("Failed to parse saved messages:", e);
-    return [];
-  }
-};
-
-// Helper function to safely save messages to localStorage
-const saveMessages = (key: string, messages: Message[]) => {
-  if (typeof window === 'undefined') return;
-  
-  try {
-    localStorage.setItem(key, JSON.stringify(messages));
-  } catch (e) {
-    console.error("Failed to save messages:", e);
-  }
-};
-
-// Helper function to debounce function calls
-const debounce = (func: Function, wait: number) => {
-  let timeout: NodeJS.Timeout;
-  return (...args: any[]) => {
-    clearTimeout(timeout);
-    timeout = setTimeout(() => func(...args), wait);
-  };
-};
-
-export default function ChatInterface({ assignmentId, receiverId }: ChatInterfaceProps) {
+export default function ChatInterface({ 
+  assignmentId, 
+  receiverId,
+  title = "Task Communication",
+  fullHeight = false
+}: ChatInterfaceProps) {
   const { user } = useUser();
   const [messages, setMessages] = useState<Message[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMessages, setIsLoadingMessages] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [isReceiverTyping, setIsReceiverTyping] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadedFiles, setUploadedFiles] = useState<{url: string, name: string, type: string}[]>([]);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   
-  // Local storage key for this chat
-  const storageKey = `chat-messages-${assignmentId}`;
-  
-  // A map to keep track of processed message IDs
+  // Track processed message IDs to avoid duplicates
   const processedMessageIds = useRef(new Set<string>());
-
-  // Load saved messages from localStorage on initialization
+  
+  // Load messages
   useEffect(() => {
-    if (!assignmentId) return;
-    
-    // Try to get cached messages first while waiting for database
-    const savedMessages = getSavedMessages(storageKey);
-    if (savedMessages.length > 0) {
-      console.log(`Loaded ${savedMessages.length} cached messages from localStorage`);
-      setMessages(savedMessages);
-      
-      // Add message IDs to processed set
-      savedMessages.forEach(msg => {
-        processedMessageIds.current.add(msg.id);
-      });
-    }
-  }, [assignmentId, storageKey]);
-
-  // Save messages to localStorage whenever they change
-  useEffect(() => {
-    if (messages.length > 0) {
-      saveMessages(storageKey, messages);
-      console.log(`Saved ${messages.length} messages to localStorage`);
-    }
-  }, [messages, storageKey]);
-
-  // Fetch messages on component mount - this only happens once
-  useEffect(() => {
-    let isMounted = true; // Add a mounted flag to prevent state updates after unmount
-    
-    const fetchMessages = async () => {
-      if (!assignmentId) {
-        setError("No assignment ID provided");
-        setIsLoadingMessages(false);
-        return;
-      }
+    const loadMessages = async () => {
+      if (!assignmentId) return;
       
       setIsLoadingMessages(true);
-      setError(null);
       
       try {
-        console.log("Fetching messages for assignment:", assignmentId);
-        const response = await getMessages(assignmentId);
-        
-        // Check if component is still mounted before updating state
-        if (!isMounted) return;
+        const response = await getAssignmentMessages(assignmentId);
         
         if (response.success && response.data) {
-          console.log(`Received ${response.data.length} messages from server`);
-          
-          // Create a new Set with existing processed IDs
-          const existingIds = new Set(processedMessageIds.current);
-          
-          // Reset the processed IDs before initializing with database messages
-          processedMessageIds.current = new Set<string>();
-          
-          // Add all fetched message IDs to the processed set
-          response.data.forEach((msg: Message) => {
+          // Set messages and mark all as processed
+          setMessages(response.data as unknown as Message[]);
+          response.data.forEach((msg: any) => {
             processedMessageIds.current.add(msg.id);
           });
-          
-          // Combine existing messages with fetched ones, avoiding duplicates
-          setMessages(prevMessages => {
-            // If we have no previous messages, just use the fetched ones
-            if (prevMessages.length === 0) {
-              return response.data as Message[];
-            }
-            
-            // Otherwise, merge them while preserving order and removing duplicates
-            const combinedMessages = [...prevMessages];
-            
-            // Add any new messages from the server
-            response.data.forEach((msg: Message) => {
-              if (!existingIds.has(msg.id)) {
-                combinedMessages.push(msg as Message);
-              }
-            });
-            
-            // Sort by creation time to ensure order
-            return combinedMessages.sort((a, b) => 
-              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-            );
-          });
+          setError(null);
         } else {
-          console.error("Error in response:", response.error);
           setError(response.error || "Failed to load messages");
         }
       } catch (error) {
-        console.error("Error fetching messages:", error);
-        if (isMounted) {
-          setError("Failed to load messages. Please try again.");
-        }
+        console.error("Error loading messages:", error);
+        setError("Failed to load messages. Please try again.");
       } finally {
-        if (isMounted) {
-          setIsLoadingMessages(false);
-        }
+        setIsLoadingMessages(false);
       }
     };
-
-    fetchMessages();
     
-    // Cleanup function to prevent updates after unmount
-    return () => {
-      isMounted = false;
-    };
-  }, [assignmentId]); // Only run when assignmentId changes
-
-  // Explicitly reset typing status when component unmounts or conversation changes
-  useEffect(() => {
-    // When component mounts, ensure any previous typing indicators are cleared
-    setIsReceiverTyping(false);
-    
-    // When component unmounts or assignmentId/receiverId changes,
-    // explicitly send typing-stop event to clean up any lingering indicators
-    return () => {
-      if (user?.id) {
-        emitTypingStatus(false);
-      }
-    };
-  }, [assignmentId, receiverId]);
-
-  // Set up Pusher subscription - separate from message fetching
+    loadMessages();
+  }, [assignmentId]);
+  
+  // Subscribe to Pusher events
   useEffect(() => {
     if (!assignmentId || !user?.id) return;
     
-    console.log("Setting up Pusher subscription for channel:", `assignment-${assignmentId}`);
+    const channel = pusherClient.subscribe(`assignment-${assignmentId}`);
     
-    // Store the channel reference so we can properly clean up
-    const channelName = `assignment-${assignmentId}`;
-    const channel = pusherClient.subscribe(channelName);
-    
-    // Define message handler
-    const handleNewMessage = (newMessage: Message) => {
-      console.log("Received new message from Pusher:", newMessage);
+    // Handle new message
+    const handleNewMessage = (message: Message) => {
+      // Skip if already processed
+      if (processedMessageIds.current.has(message.id)) return;
       
-      // Only add the message if we haven't processed it before
-      if (!processedMessageIds.current.has(newMessage.id)) {
-        processedMessageIds.current.add(newMessage.id);
-        setMessages((current) => [...current, newMessage]);
-        
-        // Reset typing indicator when we receive a message
-        if (newMessage.senderId === receiverId) {
-          setIsReceiverTyping(false);
-        }
-        
-        console.log("Added new message to state, messages count:", messages.length + 1);
-      } else {
-        console.log("Skipping duplicate message:", newMessage.id);
-      }
+      // Mark message as processed
+      processedMessageIds.current.add(message.id);
+      
+      // Add to messages
+      setMessages((current) => [...current, message]);
     };
     
-    // Handle typing events
-    const handleTypingStart = (data: { userId: string }) => {
-      console.log("Typing start event:", data);
-      
-      // Only show typing indicator if the other user is typing
-      if (data.userId === receiverId) {
-        setIsReceiverTyping(true);
-      }
-    };
+    // Bind event handlers
+    channel.bind("new-message", handleNewMessage);
     
-    const handleTypingStop = (data: { userId: string }) => {
-      console.log("Typing stop event:", data);
-      
-      // Only hide typing indicator if the other user stopped typing
-      if (data.userId === receiverId) {
-        setIsReceiverTyping(false);
-      }
-    };
-    
-    // Bind the handlers
-    channel.bind('new-message', handleNewMessage);
-    channel.bind('typing-start', handleTypingStart);
-    channel.bind('typing-stop', handleTypingStop);
-
-    // Cleanup function
+    // Clean up on unmount
     return () => {
-      console.log("Cleaning up Pusher subscription for:", channelName);
-      channel.unbind('new-message', handleNewMessage);
-      channel.unbind('typing-start', handleTypingStart);
-      channel.unbind('typing-stop', handleTypingStop);
-      pusherClient.unsubscribe(channelName);
+      channel.unbind("new-message", handleNewMessage);
+      pusherClient.unsubscribe(`assignment-${assignmentId}`);
     };
-  }, [assignmentId, receiverId, user?.id]); // Only dependent on assignmentId and receiverId
-
-  // Scroll to bottom when messages change or when typing indicator appears/disappears
+  }, [assignmentId, user?.id]);
+  
+  // Scroll to bottom on new messages
   useEffect(() => {
-    // Only scroll automatically when new messages arrive, not for typing indicators
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]); // Removed isReceiverTyping dependency
-
-  // Emit typing status to other users
-  const emitTypingStatus = async (isTyping: boolean) => {
-    if (!assignmentId || !user?.id) return;
+    if (messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [messages]);
+  
+  // Send message
+  const handleSendMessage = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    
+    if (isLoading) return;
+    
+    // Check if we have uploaded files or text message
+    const hasFiles = uploadedFiles.length > 0;
+    const hasTextMessage = newMessage.trim() !== "";
+    
+    // Only proceed if we have files or message
+    if (!hasFiles && !hasTextMessage) return;
+    
+    setIsLoading(true); 
     
     try {
-      const eventName = isTyping ? 'typing-start' : 'typing-stop';
-      await fetch('/api/pusher/typing', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          assignmentId,
-          userId: user.id,
-          isTyping,
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to emit typing status:", error);
-    }
-  };
-
-  // Create a debounced version of the typing stop function
-  const debouncedTypingStop = useRef(
-    debounce(() => emitTypingStatus(false), 2000)
-  ).current;
-
-  // Handle input changes and emit typing status
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value;
-    setNewMessage(value);
-    
-    // Only emit typing events if there's actually content
-    if (value.trim().length > 0) {
-      // Send typing start event
-      emitTypingStatus(true);
+      // Send the message with files if we have them
+      const content = hasTextMessage ? newMessage.trim() : "Sent attachments";
       
-      // Set a debounced typing stop event
-      debouncedTypingStop();
-    } else {
-      // If input is cleared, explicitly stop typing indicator
-      emitTypingStatus(false);
-    }
-  };
-
-  // Add a safety timeout to clear typing status after inactivity
-  useEffect(() => {
-    // Set a safety timeout to clear typing indicator after 10 seconds of no updates
-    const safetyTimer = setTimeout(() => {
-      if (isReceiverTyping) {
-        console.log("Safety timeout: clearing typing indicator after inactivity");
-        setIsReceiverTyping(false);
+      // For file uploads
+      let fileUrls;
+      
+      if (hasFiles) {
+        // Log the uploaded files for debugging
+        console.log("Sending files:", uploadedFiles);
+        
+        // Always store file objects as array for consistency
+        fileUrls = JSON.stringify(uploadedFiles);
       }
-    }, 10000);
-    
-    return () => clearTimeout(safetyTimer);
-  }, [isReceiverTyping]);
-
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    
-    if (!newMessage.trim() || !user?.id) return;
-    
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      console.log("Sending message:", {
-        content: newMessage.trim(),
+      
+      const response = await sendAssignmentMessage(
+        content,
         assignmentId,
         receiverId,
-        senderId: user.id
-      });
-      
-      // Immediately emit typing stop when sending message
-      emitTypingStatus(false);
-      
-      const response = await sendMessage(
-        newMessage.trim(),
-        assignmentId,
-        receiverId,
-        user.id
+        fileUrls // Send the JSON string of file objects
       );
       
       if (!response.success) {
-        console.error("Error sending message:", response.error);
         setError(response.error || "Failed to send message");
+      } else {
+        setNewMessage("");
+        setUploadedFiles([]); // Clear the uploaded files after sending
+        setError(null);
       }
-      
-      setNewMessage("");
     } catch (error) {
-      console.error("Failed to send message:", error);
+      console.error("Error sending message:", error);
       setError("Failed to send message. Please try again.");
     } finally {
       setIsLoading(false);
     }
   };
-
-  const formatTime = (date: Date) => {
+  
+  // Parse file attachments from JSON string
+  const getFileAttachments = (fileUrlsJson: string | undefined): FileAttachment[] => {
+    if (!fileUrlsJson) return [];
+    
+    console.log("Raw fileUrls data:", fileUrlsJson);
+    
+    try {
+      // Handle direct URL strings (not JSON)
+      if (typeof fileUrlsJson === 'string' && (fileUrlsJson.startsWith('http') || fileUrlsJson.startsWith('/')) && !fileUrlsJson.includes('{')) {
+        console.log("Handling direct URL string");
+        return [{
+          url: fileUrlsJson,
+          name: fileUrlsJson.split('/').pop() || "Attachment",
+          type: "application/octet-stream"
+        }];
+      }
+      
+      // Try to parse as JSON
+      let parsed;
+      try {
+        parsed = JSON.parse(fileUrlsJson);
+        console.log("Parsed JSON data:", parsed);
+      } catch (err) {
+        console.error("JSON parse error:", err);
+        // If parsing fails and it looks like a URL, treat as direct URL
+        if (typeof fileUrlsJson === 'string' && (fileUrlsJson.includes('http') || fileUrlsJson.includes('/'))) {
+          return [{
+            url: fileUrlsJson,
+            name: fileUrlsJson.split('/').pop() || "Attachment",
+            type: "application/octet-stream"
+          }];
+        }
+        throw err; // Re-throw if it's not a URL
+      }
+      
+      // If it's an array, process accordingly
+      if (Array.isArray(parsed)) {
+        console.log("Processing array of files, length:", parsed.length);
+        // If array of objects with url/name/type properties
+        if (parsed.length > 0 && typeof parsed[0] === 'object') {
+          return parsed.map((file, index) => {
+            const fileUrl = file.ufsUrl || file.url || '';
+            const fileName = file.name || (fileUrl ? fileUrl.split('/').pop() : `File ${index + 1}`) || 'Attachment';
+            
+            console.log(`Processing file ${index}:`, { url: fileUrl, name: fileName });
+            
+            return {
+              url: fileUrl,
+              name: fileName,
+              type: file.type || 'application/octet-stream'
+            };
+          }).filter(file => file.url); // Remove entries without URLs
+        }
+        
+        // If array of strings (just URLs)
+        if (parsed.length > 0 && typeof parsed[0] === 'string') {
+          return parsed.map((url, index) => ({
+            url,
+            name: url.split('/').pop() || `File ${index + 1}`,
+            type: 'application/octet-stream'
+          }));
+        }
+      }
+      
+      // If single object with url property
+      if (parsed && typeof parsed === 'object') {
+        const url = parsed.ufsUrl || parsed.url;
+        if (url) {
+          console.log("Processing single object file:", { url });
+          return [{
+            url,
+            name: parsed.name || url.split('/').pop() || 'Attachment',
+            type: parsed.type || 'application/octet-stream'
+          }];
+        }
+      }
+      
+      // Fallback - could not parse properly
+      console.error("Could not parse file attachments:", fileUrlsJson);
+      return [];
+    } catch (e) {
+      console.error("Error parsing file attachments:", e);
+      return [];
+    }
+  };
+  
+  // Format time for display
+  const formatTime = (date: Date): string => {
     return new Date(date).toLocaleTimeString([], { 
       hour: '2-digit', 
-      minute: '2-digit' 
+      minute: '2-digit'
     });
   };
 
+  // Format date for grouping messages
+  const formatMessageDate = (date: Date): string => {
+    const today = new Date();
+    const messageDate = new Date(date);
+    
+    if (
+      messageDate.getDate() === today.getDate() &&
+      messageDate.getMonth() === today.getMonth() &&
+      messageDate.getFullYear() === today.getFullYear()
+    ) {
+      return "Today";
+    }
+    
+    // Yesterday
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    if (
+      messageDate.getDate() === yesterday.getDate() &&
+      messageDate.getMonth() === yesterday.getMonth() &&
+      messageDate.getFullYear() === yesterday.getFullYear()
+    ) {
+      return "Yesterday";
+    }
+    
+    // This week (within 7 days)
+    const oneWeekAgo = new Date(today);
+    oneWeekAgo.setDate(oneWeekAgo.getDate() - 6);
+    
+    if (messageDate >= oneWeekAgo) {
+      return messageDate.toLocaleDateString(undefined, { weekday: 'long' });
+    }
+    
+    // Older messages
+    return messageDate.toLocaleDateString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      year: messageDate.getFullYear() !== today.getFullYear() ? 'numeric' : undefined
+    });
+  };
+  
+  // Group messages by date
+  const groupedMessages = messages.reduce((groups, message) => {
+    const date = formatMessageDate(new Date(message.createdAt));
+    
+    if (!groups[date]) {
+      groups[date] = [];
+    }
+    
+    groups[date].push(message);
+    return groups;
+  }, {} as Record<string, Message[]>);
+
   return (
-    <div className="flex flex-col h-[600px] border rounded-md">
-      <div className="p-3 border-b bg-muted/20 flex justify-between items-center">
-        <h3 className="font-medium">Task Communication</h3>
-        {user?.id && (
-          <VideoCallButton
-            assignmentId={assignmentId}
-            localUserId={user.id}
-            localName={user.fullName || user.firstName || "User"}
-            remoteUserId={receiverId}
-            remoteName={messages.find(m => m.senderId === receiverId)?.sender?.name || "Remote User"}
-          />
-        )}
+    <div className="flex flex-col w-full h-full">
+      <div className="text-lg font-semibold px-4 py-3 border-b">
+        {title}
       </div>
       
-      <ScrollArea className="flex-1 p-4 w-full overflow-y-auto">
-        {error && (
-          <div className="bg-red-50 text-red-700 p-3 mb-4 rounded-md border border-red-200">
-            <p>{error}</p>
-            <button 
-              onClick={() => window.location.reload()}
-              className="text-sm underline mt-1"
-            >
-              Reload page
-            </button>
-          </div>
-        )}
-        
+      <ScrollArea 
+        ref={messagesContainerRef}
+        className={`flex-grow px-4 py-2 ${fullHeight ? 'h-[calc(100vh-240px)]' : 'h-[500px]'}`}
+      >
         {isLoadingMessages ? (
-          <div className="flex items-center justify-center h-full">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-            <span className="ml-2">Loading messages...</span>
+          <div className="flex justify-center items-center h-full">
+            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full text-muted-foreground text-center p-6">
+            <p>No messages yet.</p>
+            <p className="text-sm">Send a message to start the conversation.</p>
           </div>
         ) : (
-          <div className="space-y-4 w-full">
-            {messages.length === 0 ? (
-              <p className="text-center text-muted-foreground py-6">
-                No messages yet. Start the conversation!
-              </p>
-            ) : (
-              messages.map((message, index) => {
-                const isOwn = message.senderId === user?.id;
+          <div className="space-y-4">
+            {Object.entries(groupedMessages).map(([date, dateMessages]) => (
+              <div key={date} className="space-y-4">
+                <div className="relative flex items-center justify-center my-6">
+                  <div className="absolute w-full border-t border-gray-200 dark:border-gray-800" />
+                  <span className="relative bg-background px-2 text-xs text-muted-foreground">
+                    {date}
+                  </span>
+                </div>
                 
-                return (
-                  <div 
-                    key={`${message.id}-${index}`}
-                    className={`flex ${isOwn ? 'justify-end' : 'justify-start'} w-full`}
-                  >
-                    <div className={`flex ${isOwn ? 'flex-row-reverse' : 'flex-row'} gap-2 max-w-[75%]`}>
-                      <Avatar className="h-8 w-8 flex-shrink-0">
-                        <AvatarImage src={message.sender.image || undefined} />
-                        <AvatarFallback>
-                          {message.sender.name?.charAt(0) || '?'}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="min-w-0 max-w-full overflow-hidden">
-                        <div className={`p-3 rounded-lg ${
-                          isOwn 
-                            ? 'bg-primary text-primary-foreground' 
-                            : 'bg-muted'
-                        }`}>
-                          <p className="break-words whitespace-normal text-sm">{message.content}</p>
+                {dateMessages.map((message) => {
+                  const isUserMessage = message.senderId === user?.id;
+                  const fileAttachments = getFileAttachments(message.fileUrls);
+                  
+                  return (
+                    <div 
+                      key={message.id}
+                      className={`flex ${isUserMessage ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div className="flex gap-2 max-w-[85%]">
+                        {!isUserMessage && (
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={message.sender.image || undefined} />
+                            <AvatarFallback>
+                              {message.sender.name?.charAt(0) || 'U'}
+                            </AvatarFallback>
+                          </Avatar>
+                        )}
+                        
+                        <div className="flex flex-col">
+                          <div 
+                            className={`
+                              rounded-lg px-3 py-2 max-w-md break-words
+                              ${isUserMessage 
+                                ? 'bg-primary text-primary-foreground rounded-tr-none' 
+                                : 'bg-muted rounded-tl-none'}
+                            `}
+                          >
+                            {fileAttachments.length > 0 ? (
+                              <div className="space-y-2">
+                                {/* Display message content if not just a generic upload message */}
+                                {message.content !== "Sent attachments" && message.content !== "Sent an attachment" && (
+                                  <p className="mb-2">{message.content}</p>
+                                )}
+
+                                {/* File attachments */}
+                                <div className="space-y-2">
+                                  {fileAttachments.map((file, i) => {
+                                    // Determine file type for icon and display
+                                    const isImage = file.type?.startsWith('image/') || file.url.match(/\.(jpeg|jpg|gif|png|webp)$/i);
+                                    const isPdf = file.type?.includes('pdf') || file.url.endsWith('.pdf');
+                                    
+                                    // Extract a better filename if needed
+                                    const displayName = file.name || file.url.split('/').pop() || 'Attachment';
+                                    
+                                    return (
+                                      <a 
+                                        key={i}
+                                        href={file.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="flex items-center gap-2 bg-black/5 p-2 rounded hover:bg-black/10 transition-colors"
+                                        download={displayName}
+                                        onClick={(e) => {
+                                          e.preventDefault();
+                                          
+                                          // Log what we're trying to download
+                                          console.log("Downloading file:", { 
+                                            url: file.url, 
+                                            name: displayName 
+                                          });
+                                          
+                                          // Force download using a direct fetch
+                                          fetch(file.url)
+                                            .then(response => {
+                                              if (!response.ok) {
+                                                throw new Error(`HTTP error! Status: ${response.status}`);
+                                              }
+                                              return response.blob();
+                                            })
+                                            .then(blob => {
+                                              const url = window.URL.createObjectURL(blob);
+                                              const a = document.createElement('a');
+                                              a.style.display = 'none';
+                                              a.href = url;
+                                              a.download = displayName;
+                                              document.body.appendChild(a);
+                                              a.click();
+                                              window.URL.revokeObjectURL(url);
+                                              document.body.removeChild(a);
+                                            })
+                                            .catch(err => {
+                                              console.error("Error downloading file:", err);
+                                              // Fallback to direct link if fetch fails
+                                              window.open(file.url, '_blank');
+                                            });
+                                        }}
+                                      >
+                                        {isImage ? (
+                                          <div className="text-blue-500">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                              <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                                              <circle cx="8.5" cy="8.5" r="1.5"/>
+                                              <polyline points="21 15 16 10 5 21"/>
+                                            </svg>
+                                          </div>
+                                        ) : isPdf ? (
+                                          <div className="text-red-500">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                                              <polyline points="14 2 14 8 20 8"/>
+                                              <path d="M9 15v-4M12 15v-2M15 15v-6"/>
+                                            </svg>
+                                          </div>
+                                        ) : (
+                                          <FileIcon className="h-4 w-4 flex-shrink-0 text-gray-500" />
+                                        )}
+                                        <span className="text-sm truncate">{displayName}</span>
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            ) : (
+                              <p>{message.content}</p>
+                            )}
+                          </div>
+                          
+                          <span className={`text-xs text-muted-foreground mt-1 ${isUserMessage ? 'text-right' : ''}`}>
+                            {formatTime(new Date(message.createdAt))}
+                          </span>
                         </div>
-                        <p className={`text-xs text-muted-foreground mt-1 ${
-                          isOwn ? 'text-right' : 'text-left'
-                        }`}>
-                          {formatTime(message.createdAt)}
-                        </p>
                       </div>
                     </div>
-                  </div>
-                );
-              })
-            )}
-            
-            {/* Typing indicator */}
-            {isReceiverTyping && (
-              <div className="flex justify-start w-full">
-                <div className="flex flex-row gap-2 max-w-[75%]">
-                  <Avatar className="h-8 w-8 flex-shrink-0">
-                    <AvatarFallback>?</AvatarFallback>
-                  </Avatar>
-                  <div className="p-3 rounded-lg bg-muted min-w-[60px]">
-                    <div className="flex space-x-1 items-center">
-                      <div className="h-2 w-2 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                      <div className="h-2 w-2 bg-muted-foreground/60 rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                      <div className="h-2 w-2 bg-muted-foreground/60 rounded-full animate-bounce"></div>
-                    </div>
-                  </div>
-                </div>
+                  );
+                })}
               </div>
-            )}
+            ))}
             
             <div ref={messagesEndRef} />
           </div>
         )}
       </ScrollArea>
       
-      <form 
-        onSubmit={handleSendMessage}
-        className="border-t p-3 flex gap-2"
-      >
-        <Input
-          value={newMessage}
-          onChange={handleInputChange}
-          placeholder="Type your message..."
-          disabled={isLoading || isLoadingMessages}
-          className="flex-1"
-        />
-        <Button 
-          type="submit" 
-          disabled={!newMessage.trim() || isLoading || isLoadingMessages}
+      {error && (
+        <div className="p-2 text-destructive text-sm">
+          {error}
+        </div>
+      )}
+      
+      <div className="border-t p-3">
+        <form 
+          onSubmit={(e) => handleSendMessage(e)}
+          className="flex gap-2 flex-col"
         >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
-          Send
-        </Button>
-      </form>
+          {/* Display all uploaded files */}
+          {uploadedFiles.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {uploadedFiles.map((file, index) => (
+                <div key={index} className="flex items-center px-2 py-1 bg-muted rounded-md">
+                  <FileIcon className="h-4 w-4 mr-1" />
+                  <span className="text-xs truncate max-w-[100px]">{file.name}</span>
+                  <Button 
+                    type="button" 
+                    variant="ghost" 
+                    size="icon" 
+                    className="h-5 w-5 ml-1" 
+                    onClick={() => setUploadedFiles(files => files.filter((_, i) => i !== index))}
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                      <path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z" />
+                    </svg>
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+          
+          <div className="flex gap-2">
+            <Input
+              placeholder="Type a message..."
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              disabled={isLoading || isUploading}
+              className="flex-grow"
+            />
+            
+            <UploadButton
+              endpoint="messageUploader"
+              onClientUploadComplete={(res) => {
+                if (res && res.length > 0) {
+                  // Add all uploaded files to the state
+                  const newFiles = res.map(file => ({
+                    url: file.url || file.ufsUrl, // Try both properties for compatibility
+                    name: file.name || (file.url || file.ufsUrl).split('/').pop() || 'File',
+                    type: file.type || 'application/octet-stream'
+                  }));
+                  
+                  // Log what we're adding to help debug
+                  console.log("Files being added:", newFiles);
+                  
+                  setUploadedFiles(prev => [...prev, ...newFiles]);
+                }
+                setIsUploading(false);
+              }}
+              onUploadBegin={() => setIsUploading(true)}
+              onUploadError={(error) => {
+                console.error("Upload error:", error);
+                setError("Failed to upload file");
+                setIsUploading(false);
+              }}
+              className="upload-button bg-red-400 p-2 rounded-md"
+            />
+            
+            <Button 
+              type="submit" 
+              size="icon"
+              disabled={(uploadedFiles.length === 0 && !newMessage.trim()) || isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4" />
+              )}
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 } 

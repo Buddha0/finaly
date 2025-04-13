@@ -2,188 +2,263 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import Stripe from 'stripe';
 import prisma from '@/lib/db';
+import { AssignmentStatus } from "@prisma/client";
 
 // Initialize Stripe with the secret key
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
   apiVersion: '2025-03-31.basil',
 });
 
-const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
+// Helper to read the request body as text
+// async function buffer(readable: Readable) {
+//   const chunks = [];
+//   for await (const chunk of readable) {
+//     chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+//   }
+//   return Buffer.concat(chunks);
+// }
 
 export async function POST(req: Request) {
+  const body = await req.text();
+  // Get headers and signature in a Next.js App Router compatible way
+  const headersList = await headers();
+  const signature = headersList.get("stripe-signature");
+
+  let event;
+
   try {
-    const body = await req.text();
-    // Use type assertion to resolve TypeScript error
-    const headerList = headers() as any;
-    const signature = headerList.get('stripe-signature');
-
-    if (!signature) {
-      return NextResponse.json(
-        { error: 'Missing Stripe signature' },
-        { status: 400 }
-      );
+    if (!signature || !process.env.STRIPE_WEBHOOK_SECRET) {
+      throw new Error("Missing signature or webhook secret");
     }
+    
+    event = stripe.webhooks.constructEvent(
+      body,
+      signature,
+      process.env.STRIPE_WEBHOOK_SECRET
+    );
+  } catch (error: any) {
+    console.error(`Webhook Error: ${error.message}`);
+    return NextResponse.json(
+      { error: `Webhook Error: ${error.message}` },
+      { status: 400 }
+    );
+  }
 
-    // Verify webhook signature
-    let event: Stripe.Event;
-    try {
-      event = stripe.webhooks.constructEvent(body, signature, webhookSecret);
-    } catch (err) {
-      console.error('Webhook signature verification failed:', err);
-      return NextResponse.json(
-        { error: 'Webhook signature verification failed' },
-        { status: 400 }
-      );
-    }
-
-    // Handle specific events
+  try {
+    console.log(`Received webhook event: ${event.type}`);
+    
+    // Handle the event based on its type
     switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        
-        // Log the entire session for debugging
-        console.log('Stripe session completed:', JSON.stringify(session, null, 2));
-        console.log('Session metadata:', session.metadata);
-        
-        // Extract metadata
-        const { taskId, bidId, doerId } = session.metadata || {};
-        
-        if (!taskId || !bidId || !doerId) {
-          console.error('Missing metadata in checkout session:', session.id);
-          console.error('Available metadata:', JSON.stringify(session.metadata, null, 2));
-          return NextResponse.json(
-            { error: 'Missing metadata in checkout session' },
-            { status: 400 }
-          );
-        }
-
-        console.log(`Processing payment for task ${taskId}, bid ${bidId}, doer ${doerId}`);
-
-        try {
-          // Start a transaction to update payment and assignment status
-          await prisma.$transaction(async (tx) => {
-            console.log('Starting database transaction');
-            
-            // Update payment status
-            const updatedPayment = await tx.payment.update({
-              where: {
-                assignmentId: taskId,
-              },
-              data: {
-                status: 'COMPLETED',
-                stripePaymentId: session.payment_intent as string,
-              },
-            });
-            console.log('Updated payment:', updatedPayment);
-
-            // Update bid status to accepted
-            const updatedBid = await tx.bid.update({
-              where: {
-                id: bidId,
-              },
-              data: {
-                status: 'accepted',
-              },
-            });
-            console.log('Updated bid:', updatedBid);
-
-            // Update all other bids for this task to rejected
-            const rejectedBids = await tx.bid.updateMany({
-              where: {
-                assignmentId: taskId,
-                id: {
-                  not: bidId,
-                },
-              },
-              data: {
-                status: 'rejected',
-              },
-            });
-            console.log('Rejected other bids:', rejectedBids);
-
-            // Update assignment status to ASSIGNED and set the doer
-            const updatedAssignment = await tx.assignment.update({
-              where: {
-                id: taskId,
-              },
-              data: {
-                status: 'ASSIGNED',
-                doerId: doerId,
-              },
-            });
-            console.log('Updated assignment:', updatedAssignment);
-            
-            // Double-check that the assignment status was updated correctly
-            const verifiedAssignment = await tx.assignment.findUnique({
-              where: { id: taskId },
-            });
-            
-            if (verifiedAssignment?.status !== 'ASSIGNED') {
-              console.error('Failed to update task status to ASSIGNED, current status:', 
-                           verifiedAssignment?.status);
-              
-              // Try one more time with a direct update outside of the transaction
-              await prisma.assignment.update({
-                where: { id: taskId },
-                data: {
-                  status: 'ASSIGNED',
-                  doerId: doerId,
-                },
-              });
-            }
-            
-            console.log('Transaction completed successfully');
-          });
-        } catch (error) {
-          console.error('Error in database transaction:', error);
-          return NextResponse.json(
-            { error: 'Database update failed' },
-            { status: 500 }
-          );
-        }
-
-        console.log(`Payment completed for task ${taskId}, bid ${bidId}`);
+      case 'payment_intent.succeeded':
+        await handlePaymentIntentSucceeded(event.data.object);
         break;
-      }
-
-      case 'charge.refunded': {
-        const charge = event.data.object as Stripe.Charge;
-        const paymentIntentId = charge.payment_intent as string;
-
-        // Find the payment record using the payment intent ID
-        const payment = await prisma.payment.findFirst({
-          where: {
-            stripePaymentId: paymentIntentId,
-          },
-        });
-
-        if (payment) {
-          // Update payment status to REFUNDED
-          await prisma.payment.update({
-            where: {
-              id: payment.id,
-            },
-            data: {
-              status: 'REFUNDED',
-              stripeRefundId: charge.refunds?.data?.[0]?.id,
-            },
-          });
-
-          console.log(`Payment refunded for payment ID ${payment.id}`);
-        }
+        
+      case 'payment_intent.payment_failed':
+        await handlePaymentIntentFailed(event.data.object);
         break;
-      }
-
+        
+      case 'checkout.session.completed':
+        await handleCheckoutSessionCompleted(event.data.object);
+        break;
+        
+      case 'account.updated':
+        await handleAccountUpdated(event.data.object);
+        break;
+        
+      // Add other event types as needed
+        
       default:
         console.log(`Unhandled event type: ${event.type}`);
     }
 
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Error processing Stripe webhook:', error);
+    console.error("Error processing webhook:", error);
     return NextResponse.json(
-      { error: 'Failed to process webhook' },
+      { error: "Error processing webhook" },
       { status: 500 }
     );
   }
-} 
+}
+
+async function handlePaymentIntentSucceeded(paymentIntent: any) {
+  const { taskId, bidId } = paymentIntent.metadata || {};
+  
+  if (!taskId || !bidId) {
+    console.log("Missing metadata in payment intent");
+    return;
+  }
+  
+  console.log(`Payment intent succeeded: ${paymentIntent.id} for task ${taskId}`);
+  
+  // Update the assignment status and save the paymentIntentId
+  await prisma.assignment.updateMany({
+    where: {
+      id: taskId,
+      status: {
+        not: AssignmentStatus.COMPLETED,
+      },
+    } as any,
+    data: {
+      status: AssignmentStatus.ASSIGNED,
+      stripePaymentIntentId: paymentIntent.id,
+    },
+  });
+  
+  // Update the payment record as COMPLETED
+  await prisma.payment.updateMany({
+    where: {
+      assignmentId: taskId,
+      status: 'PENDING',
+    },
+    data: {
+      status: 'COMPLETED',
+      stripePaymentId: paymentIntent.id,
+    },
+  });
+  
+  console.log(`Payment succeeded for task ${taskId}, updated with payment intent ID ${paymentIntent.id}`);
+}
+
+// Handle checkout session completed event
+async function handleCheckoutSessionCompleted(session: any) {
+  const { taskId, bidId, doerId } = session.metadata || {};
+  
+  if (!taskId || !bidId) {
+    console.log("Missing metadata in checkout session");
+    return;
+  }
+  
+  console.log(`Checkout session completed: ${session.id} for task ${taskId}`);
+  
+  try {
+    // Retrieve the payment intent associated with this session
+    const paymentIntent = await stripe.paymentIntents.retrieve(
+      session.payment_intent
+    );
+    
+    console.log(`Associated payment intent: ${paymentIntent.id}`);
+    
+    // Update the task with the payment intent ID
+    await prisma.assignment.update({
+      where: {
+        id: taskId,
+      },
+      data: {
+        stripePaymentIntentId: paymentIntent.id,
+        status: AssignmentStatus.ASSIGNED,
+        doerId: doerId,
+        acceptedBidId: bidId,
+      },
+    });
+    
+    // Update the payment record
+    await prisma.payment.updateMany({
+      where: {
+        assignmentId: taskId,
+        status: 'PENDING',
+      },
+      data: {
+        status: 'COMPLETED',
+        stripePaymentId: paymentIntent.id,
+      },
+    });
+    
+    // Mark the bid as accepted
+    await prisma.bid.update({
+      where: {
+        id: bidId,
+      },
+      data: {
+        status: "ACCEPTED",
+      },
+    });
+    
+    // Decline other bids
+    await prisma.bid.updateMany({
+      where: {
+        assignmentId: taskId,
+        id: {
+          not: bidId,
+        },
+      },
+      data: {
+        status: "DECLINED",
+      },
+    });
+    
+    console.log(`Task and payment records updated for task ${taskId}`);
+  } catch (error) {
+    console.error(`Error processing checkout session for task ${taskId}:`, error);
+  }
+}
+
+async function handlePaymentIntentFailed(paymentIntent: any) {
+  const { taskId, bidId } = paymentIntent.metadata || {};
+  
+  if (!taskId || !bidId) {
+    console.log("Missing metadata in payment intent");
+    return;
+  }
+  
+  // Revert the assignment status
+  await prisma.assignment.updateMany({
+    where: {
+      id: taskId,
+      stripePaymentIntentId: paymentIntent.id,
+    } as any,
+    data: {
+      status: AssignmentStatus.OPEN,
+      doerId: null,
+      acceptedBidId: null,
+      stripePaymentIntentId: null,
+    } as any,
+  });
+  
+  // Revert the bid status
+  await prisma.bid.update({
+    where: {
+      id: bidId,
+    },
+    data: {
+      status: "PENDING",
+    },
+  });
+  
+  console.log(`Payment failed for task ${taskId}`);
+}
+
+async function handleAccountUpdated(account: any) {
+  // Update user record when their Stripe account is updated
+  const user = await prisma.user.findFirst({
+    where: {
+      stripeConnectAccountId: account.id,
+    } as any,
+  });
+  
+  if (!user) {
+    console.log(`No user found with Stripe account ID ${account.id}`);
+    return;
+  }
+  
+  // Update verification status based on account details
+  // const verificationStatus = account.charges_enabled ? "VERIFIED" : "PENDING";
+  
+  await prisma.user.update({
+    where: {
+      id: user.id,
+    },
+    data: {
+      stripeAccountVerified: account.charges_enabled,
+    } as any,
+  });
+  
+  console.log(`Updated user ${user.id} Stripe account status`);
+}
+
+// Config for the API route
+export const config = {
+  api: {
+    bodyParser: false,
+  },
+}; 

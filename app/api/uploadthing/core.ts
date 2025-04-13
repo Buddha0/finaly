@@ -1,6 +1,6 @@
+import { auth } from "@clerk/nextjs/server"; // Clerk's auth function
 import { createUploadthing, type FileRouter } from "uploadthing/next";
 import { UploadThingError } from "uploadthing/server";
-import { auth } from "@clerk/nextjs/server"; // Clerk's auth function
 
 const f = createUploadthing();
 
@@ -11,7 +11,6 @@ export const ourFileRouter = {
     image: { maxFileSize: "4MB", maxFileCount: 5 },
     pdf: { maxFileSize: "8MB", maxFileCount: 3 },
     text: { maxFileSize: "8MB", maxFileCount: 10 },
-    video: { maxFileSize: "1GB", maxFileCount: 2 },
   })
     // Set permissions and file types for this FileRoute
     .middleware(async () => {
@@ -33,6 +32,81 @@ export const ourFileRouter = {
       // Return metadata to client-side callback
       return { uploadedBy: metadata.userId };
     }),
+    messageUploader: f({
+      image: { maxFileSize: "4MB", maxFileCount: 5 },
+      pdf: { maxFileSize: "8MB", maxFileCount: 3 },
+      text: { maxFileSize: "8MB", maxFileCount: 10 },
+    })
+      // Set permissions and file types for this FileRoute
+      .middleware(async () => {
+        // This code runs on your server before upload
+        const { userId } = await auth(); // Use Clerk's auth function to get user info
+  
+        // If no userId, user is not authenticated
+        
+        if (!userId) throw new UploadThingError("Unauthorized");
+  
+        // Return userId as metadata, accessible in onUploadComplete
+        return { userId };
+      })
+      .onUploadComplete(async ({ metadata, file }) => {
+        // This code RUNS ON YOUR SERVER after upload
+        console.log("Upload complete for userId:", metadata.userId);
+        console.log("file url", file.ufsUrl);
+  
+        // Return metadata to client-side callback
+        return { uploadedBy: metadata.userId };
+      }),
+      fileSubmissionUploader: f({
+        image: { maxFileSize: "4MB", maxFileCount: 5 },
+        pdf: { maxFileSize: "8MB", maxFileCount: 3 },
+        text: { maxFileSize: "8MB", maxFileCount: 10 },
+      })
+        // Set permissions and file types for this FileRoute
+        .middleware(async () => {
+          // This code runs on your server before upload
+          const { userId } = await auth(); // Use Clerk's auth function to get user info
+    
+          // If no userId, user is not authenticated
+          
+          if (!userId) throw new UploadThingError("Unauthorized");
+    
+          // Return userId as metadata, accessible in onUploadComplete
+          return { userId };
+        })
+        .onUploadComplete(async ({ metadata, file }) => {
+          // This code RUNS ON YOUR SERVER after upload
+          console.log("Upload complete for userId:", metadata.userId);
+          console.log("file url", file.ufsUrl);
+    
+          // Return metadata to client-side callback
+          return { uploadedBy: metadata.userId };
+        }),
+        evidence: f({
+          image: { maxFileSize: "4MB", maxFileCount: 5 },
+          pdf: { maxFileSize: "8MB", maxFileCount: 3 },
+          text: { maxFileSize: "8MB", maxFileCount: 10 },
+        })
+          // Set permissions and file types for this FileRoute
+          .middleware(async () => {
+            // This code runs on your server before upload
+            const { userId } = await auth(); // Use Clerk's auth function to get user info
+      
+            // If no userId, user is not authenticated
+            
+            if (!userId) throw new UploadThingError("Unauthorized");
+      
+            // Return userId as metadata, accessible in onUploadComplete
+            return { userId };
+          })
+          .onUploadComplete(async ({ metadata, file }) => {
+            // This code RUNS ON YOUR SERVER after upload
+            console.log("Upload complete for userId:", metadata.userId);
+            console.log("file url", file.ufsUrl);
+      
+            // Return metadata to client-side callback
+            return { uploadedBy: metadata.userId };
+          }),
     
   // Special route for citizenship ID uploads with stricter limits
   citizenshipUploader: f({

@@ -1,24 +1,19 @@
 "use client"
 
-import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
-import { Role } from "@prisma/client"
 import { updateUserRole } from "@/actions/update-user-role"
-import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
-import { toast } from "sonner"
+import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
+import { Role } from "@prisma/client"
 import { RefreshCcw } from "lucide-react"
-import { useClerk } from "@clerk/nextjs"
+import { useState, useTransition } from "react"
+import { toast } from "sonner"
 
 interface RoleSwitcherProps {
   currentRole: Role
 }
 
 export function RoleSwitcher({ currentRole }: RoleSwitcherProps) {
-  const router = useRouter()
-  const { signOut } = useClerk()
   const [isPending, startTransition] = useTransition()
   const [isDoer, setIsDoer] = useState(currentRole === "DOER")
 

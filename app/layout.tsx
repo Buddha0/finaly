@@ -5,7 +5,6 @@ import './globals.css'
 import { NextSSRPlugin } from "@uploadthing/react/next-ssr-plugin";
 import { extractRouterConfig } from "uploadthing/server";
 import { ourFileRouter } from "@/app/api/uploadthing/core";
-import { Toaster as UIToaster } from '@/components/ui/toaster'
 import { Toaster } from 'sonner'
 
 export default function RootLayout({
@@ -27,7 +26,6 @@ export default function RootLayout({
             routerConfig={extractRouterConfig(ourFileRouter)}
           />
           {children}
-          <UIToaster />
           <Toaster position="top-right" richColors />
         </body>
       </html>

@@ -1,22 +1,22 @@
 "use client"
 
+import { createTask } from "@/actions/create-tasks"
+import { deleteFile } from "@/actions/utility/file-utility"
+import { getTaskDetails, updateTask } from "@/actions/utility/task-utility"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { FilePlus, Home, ListChecks, Paperclip, X, Loader2 } from "lucide-react"
+import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { DatePicker } from "@/components/ui/date-picker"
-import { useEffect, useState } from "react"
+import { Textarea } from "@/components/ui/textarea"
 import { UploadButton } from "@/utils/uploadthing"
-import { deleteFile } from "@/actions/utility/file-utility"
-import { createTask } from "@/actions/create-tasks"
-import { useParams, useRouter, useSearchParams } from "next/navigation"
-import { toast } from "sonner"
 import { useUser } from "@clerk/nextjs"
-import { getTaskDetails, updateTask } from "@/actions/utility/task-utility"
+import { FilePlus, Home, ListChecks, Loader2, Paperclip, ShieldCheck, X } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Suspense, useEffect, useState } from "react"
+import { toast } from "sonner"
 
 const navItems = [
     {
@@ -34,10 +34,15 @@ const navItems = [
         label: "Create Task",
         icon: FilePlus,
     },
+    {
+        href: "/poster/verification",
+        label: "Verification",
+        icon: ShieldCheck,
+      }
     
 ]
 
-export default function CreateTask() {
+function CreateTaskForm() {
     const [date, setDate] = useState<Date>()
     const [title, setTitle] = useState("")
     const [description, setDescription] = useState("")
@@ -384,5 +389,27 @@ export default function CreateTask() {
             </div>
         </DashboardLayout>
     )
+}
+
+// Add a loading component for the Suspense fallback
+function LoadingForm() {
+  return (
+    <DashboardLayout navItems={navItems} userRole="poster" userName="">
+      <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Loading form...</p>
+        </div>
+      </div>
+    </DashboardLayout>
+  )
+}
+
+export default function CreateTask() {
+  return (
+    <Suspense fallback={<LoadingForm />}>
+      <CreateTaskForm />
+    </Suspense>
+  )
 }
 

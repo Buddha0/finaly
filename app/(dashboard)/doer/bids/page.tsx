@@ -1,25 +1,24 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { getUserBids, updateBid, withdrawBid } from "@/actions/utility/task-utility"
 import { DashboardLayout } from "@/components/dashboard-layout"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Clock, DollarSign, FileText, Home, ListChecks, Loader2, Search, Settings, User } from "lucide-react"
-import Link from "next/link"
-import { getUserBids, withdrawBid, updateBid } from "@/actions/utility/task-utility"
-import { useUser } from "@clerk/nextjs"
-import { toast } from "sonner"
 import { Textarea } from "@/components/ui/textarea"
-import React from "react"
+import { useUser } from "@clerk/nextjs"
+import { Clock, DollarSign, FileText, Home, ListChecks, Loader2, Search } from "lucide-react"
+import Link from "next/link"
+import React, { useEffect, useState } from "react"
+import { toast } from "sonner"
 
 const navItems = [
   {
-    href: "/doer/dashboard",
+    href: "/doer",
     label: "Dashboard",
     icon: Home,
   },
@@ -38,16 +37,7 @@ const navItems = [
     label: "Available Tasks",
     icon: Search,
   },
-  {
-    href: "/doer/profile",
-    label: "Profile",
-    icon: User,
-  },
-  {
-    href: "/doer/settings",
-    label: "Settings",
-    icon: Settings,
-  },
+
 ]
 
 interface Bid {
@@ -509,7 +499,7 @@ function BidCard({ bid, formatDate, getStatusBadge }: BidCardProps) {
           <Card className="w-full max-w-md mx-4">
             <CardHeader>
               <CardTitle>Edit Your Bid</CardTitle>
-              <CardDescription>Make changes to your bid for "{bid.task.title}"</CardDescription>
+              <CardDescription>Make changes to your bid for {bid.task.title}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">

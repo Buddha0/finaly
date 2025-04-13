@@ -1,10 +1,9 @@
 "use client"
 
-import { useUser } from "@clerk/nextjs"
-import { DashboardLayout } from "@/components/dashboard-layout"
 import { VerificationCard } from "@/app/(dashboard)/components/verification-card"
-import { Home, ClipboardList, ListFilter, ShieldCheck, Briefcase } from "lucide-react"
-import { useEffect } from "react"
+import { DashboardLayout } from "@/components/dashboard-layout"
+import { useUser } from "@clerk/nextjs"
+import { Briefcase, ClipboardList, Home, ListFilter, ShieldCheck } from "lucide-react"
 
 const navItems = [
   {
@@ -62,7 +61,7 @@ export default function DoerVerificationPage() {
           </ul>
           <p className="mt-4 text-sm text-muted-foreground">
             Your document will be reviewed by our admin team, and your verification status will 
-            be updated within 24-48 hours. Once verified, you'll be able to bid on and accept tasks.
+            be updated within 24-48 hours. Once verified, you will be able to bid on and accept tasks.
           </p>
         </div>
       </div>

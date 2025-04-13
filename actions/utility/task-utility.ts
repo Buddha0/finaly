@@ -44,7 +44,6 @@ export async function getUserTasks(userId: string) {
                 messagesCount: task.messages.length,
                 bidsCount: task.status === 'OPEN' ? task.bids.length : undefined,
                 submissionsCount: task.submissions.length,
-                progress: getTaskProgress(task.status)
             }))
         }
     } catch (error) {
@@ -58,10 +57,19 @@ export async function getUserTasks(userId: string) {
 
 export async function getTaskDetails(taskId: string, userId: string) {
     try {
+        console.log(`Fetching task details for taskId=${taskId}, userId=${userId}`);
+        
+        if (!taskId || !userId) {
+            return {
+                success: false,
+                error: "Task ID and User ID are required"
+            }
+        }
+
         const task = await prisma.assignment.findUnique({
             where: {
                 id: taskId,
-                posterId: userId // Ensure the user owns this task
+                posterId: userId,
             },
             include: {
                 doer: {
@@ -73,24 +81,7 @@ export async function getTaskDetails(taskId: string, userId: string) {
                         bio: true
                     }
                 },
-                messages: {
-                    orderBy: {
-                        createdAt: 'asc'
-                    },
-                    include: {
-                        sender: {
-                            select: {
-                                id: true,
-                                name: true,
-                                image: true
-                            }
-                        }
-                    }
-                },
                 bids: {
-                    orderBy: {
-                        createdAt: 'desc'
-                    },
                     include: {
                         user: {
                             select: {
@@ -100,6 +91,23 @@ export async function getTaskDetails(taskId: string, userId: string) {
                                 rating: true
                             }
                         }
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
+                    }
+                },
+                messages: {
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                image: true
+                            }
+                        }
+                    },
+                    orderBy: {
+                        createdAt: 'desc'
                     }
                 },
                 submissions: {
@@ -119,7 +127,7 @@ export async function getTaskDetails(taskId: string, userId: string) {
                 },
                 payment: true // Include payment information
             }
-        })
+        });
 
         if (!task) {
             return {
@@ -128,11 +136,105 @@ export async function getTaskDetails(taskId: string, userId: string) {
             }
         }
 
+        // Log raw submissions data to help with debugging
+        console.log("Raw submissions data:", JSON.stringify(task.submissions.map(s => ({
+            id: s.id,
+            content: s.content,
+            hasAttachments: !!s.attachments,
+            attachmentsType: s.attachments ? typeof s.attachments : 'none',
+            attachmentsIsArray: s.attachments ? Array.isArray(s.attachments) : false,
+            attachmentsPreview: s.attachments ? 
+                (typeof s.attachments === 'string' ? s.attachments.substring(0, 100) : 
+                 Array.isArray(s.attachments) ? `Array with ${s.attachments.length} items` : 
+                 JSON.stringify(s.attachments).substring(0, 100)) : 'none'
+        })), null, 2));
+
+        // Process submissions to ensure attachments are properly formatted
+        const processedSubmissions = task.submissions.map(sub => {
+            // Ensure attachments is an array of objects with url, name, type
+            let attachments = [];
+            
+            if (sub.attachments) {
+                try {
+                    // If it's a string, try to parse it as JSON
+                    if (typeof sub.attachments === 'string') {
+                        try {
+                            attachments = JSON.parse(sub.attachments);
+                        } catch (e) {
+                            console.error(`Failed to parse attachments string for submission ${sub.id}:`, e);
+                            // If parsing fails, treat as a single URL
+                            attachments = [{
+                                url: sub.attachments,
+                                name: sub.attachments.split('/').pop() || 'Attachment',
+                                type: 'application/octet-stream'
+                            }];
+                        }
+                    } 
+                    // If it's already an array, use it directly
+                    else if (Array.isArray(sub.attachments)) {
+                        attachments = sub.attachments;
+                    } 
+                    // If it's an object, wrap it in an array
+                    else if (typeof sub.attachments === 'object') {
+                        attachments = [sub.attachments];
+                    }
+                    
+                    // Ensure each attachment has the required fields
+                    attachments = attachments.map((att: any) => {
+                        // Check if this is a nested structure with fileUrls
+                        if (att && typeof att === 'object' && 'fileUrls' in att) {
+                            try {
+                                const fileData = JSON.parse(att.fileUrls);
+                                return Array.isArray(fileData) ? fileData : [fileData];
+                            } catch (e) {
+                                console.error("Failed to parse fileUrls:", e);
+                                return {
+                                    url: att.fileUrls || '',
+                                    name: 'Attachment',
+                                    type: 'application/octet-stream'
+                                };
+                            }
+                        }
+                        
+                        // Normal attachment object
+                        const url = att.url || att.ufsUrl || (typeof att === 'string' ? att : '');
+                        return {
+                            url,
+                            name: att.name || (url ? url.split('/').pop() : 'Attachment'),
+                            type: att.type || 'application/octet-stream'
+                        };
+                    });
+                    
+                    // Flatten in case we have nested arrays
+                    attachments = attachments.flat().filter((att: any) => att && att.url);
+                    
+                } catch (e) {
+                    console.error(`Error processing attachments for submission ${sub.id}:`, e, sub.attachments);
+                    attachments = [];
+                }
+            }
+            
+            console.log(`Processed attachments for submission ${sub.id}:`, attachments);
+            
+            return {
+                id: sub.id,
+                content: sub.content,
+                status: sub.status,
+                createdAt: sub.createdAt,
+                attachments,
+                user: {
+                    id: sub.user.id,
+                    name: sub.user.name,
+                    image: sub.user.image,
+                    rating: sub.user.rating
+                }
+            };
+        });
+
         return {
             success: true,
             data: {
                 ...task,
-                progress: getTaskProgress(task.status),
                 doerInfo: task.doer ? {
                     id: task.doer.id,
                     name: task.doer.name,
@@ -163,18 +265,7 @@ export async function getTaskDetails(taskId: string, userId: string) {
                         rating: bid.user.rating
                     }
                 })),
-                submissions: task.submissions.map(sub => ({
-                    id: sub.id,
-                    content: sub.content,
-                    status: sub.status,
-                    createdAt: sub.createdAt,
-                    user: {
-                        id: sub.user.id,
-                        name: sub.user.name,
-                        image: sub.user.image,
-                        rating: sub.user.rating
-                    }
-                })),
+                submissions: processedSubmissions,
                 payment: task.payment // Include payment in the returned data
             }
         }
@@ -187,24 +278,7 @@ export async function getTaskDetails(taskId: string, userId: string) {
     }
 }
 
-function getTaskProgress(status: AssignmentStatus): number {
-    switch (status) {
-        case 'OPEN':
-            return 0
-        case 'ASSIGNED':
-            return 25
-        case 'IN_PROGRESS':
-            return 50
-        case 'UNDER_REVIEW':
-            return 75
-        case 'COMPLETED':
-            return 100
-        case 'CANCELLED':
-            return 0
-        default:
-            return 0
-    }
-}
+// Function getTaskProgress removed - no longer tracking progress
 
 export async function deleteTask(taskId: string, userId: string) {
     try {
@@ -848,15 +922,13 @@ export async function rejectBid(bidId: string, userId: string) {
 
 export async function getDoerTaskDetails(taskId: string, userId: string) {
     try {
-        console.log(`Fetching task details for taskId=${taskId}, userId=${userId}`);
-        
-        // Find the task - either the user is the doer or the task is open and available
+        // First verify the user has access to this task
         const task = await prisma.assignment.findFirst({
             where: {
                 id: taskId,
                 OR: [
-                    { doerId: userId }, // User is assigned to this task
-                    { status: 'OPEN' } // Task is open for bidding
+                    { doerId: userId },  // They are assigned to this task
+                    { status: 'OPEN' }   // Or the task is open for bidding
                 ]
             },
             include: {
@@ -869,118 +941,74 @@ export async function getDoerTaskDetails(taskId: string, userId: string) {
                         createdAt: true
                     }
                 },
-                messages: {
+                submissions: {
                     orderBy: {
-                        createdAt: 'asc'
-                    },
-                    include: {
-                        sender: {
-                            select: {
-                                id: true,
-                                name: true,
-                                image: true
-                            }
-                        }
+                        createdAt: 'desc'
                     }
                 },
                 bids: {
                     where: {
-                        userId: userId // Only include the doer's own bid
-                    },
-                    orderBy: {
-                        createdAt: 'desc'
-                    }
-                },
-                submissions: {
-                    where: {
-                        userId: userId // Only include the doer's own submissions
-                    },
-                    orderBy: {
-                        createdAt: 'desc'
+                        userId: userId
                     }
                 }
             }
-        });
-
-        console.log(`Task query result:`, task ? `Found task with ID ${task.id}` : 'No task found');
+        })
 
         if (!task) {
-            // Let's try a simpler query to see if the task exists at all
-            const basicTask = await prisma.assignment.findUnique({
-                where: { id: taskId },
-                select: { 
-                    id: true, 
-                    status: true, 
-                    doerId: true,
-                    posterId: true
-                }
-            });
-            
-            console.log(`Basic task query:`, basicTask ? 
-                `Task exists with status=${basicTask.status}, doerId=${basicTask.doerId}, posterId=${basicTask.posterId}` : 
-                'Task does not exist with this ID');
-                
             return {
                 success: false,
-                error: "Task not found"
-            };
+                error: "Task not found or you don't have access"
+            }
         }
 
-        // Check if the user has a bid on this task
-        const userBid = task.bids.length > 0 ? task.bids[0] : null;
+        // Get the user's bid on this task if any
+        const userBid = task.bids.length > 0 ? task.bids[0] : null
+
+        // Format the response data
+        const taskData = {
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            category: task.category,
+            budget: task.budget,
+            deadline: task.deadline,
+            status: task.status.toLowerCase(),
+            attachments: task.attachments,
+            poster: {
+                id: task.poster.id,
+                name: task.poster.name,
+                image: task.poster.image,
+                rating: task.poster.rating,
+                memberSince: task.poster.createdAt
+            },
+            messages: [], // Messages would be loaded via the chat system
+            submissions: task.submissions.map(submission => ({
+                id: submission.id,
+                content: submission.content,
+                status: submission.status,
+                createdAt: submission.createdAt,
+                attachments: submission.attachments
+            })),
+            bid: userBid ? {
+                id: userBid.id,
+                amount: userBid.bidAmount,
+                timeframe: "Not specified", // This would come from bid details
+                message: userBid.content,
+                status: userBid.status
+            } : null
+        }
 
         return {
             success: true,
-            data: {
-                id: task.id,
-                title: task.title,
-                description: task.description,
-                category: task.category,
-                budget: task.budget,
-                deadline: task.deadline,
-                status: task.status.toLowerCase(),
-                progress: getTaskProgress(task.status),
-                attachments: task.attachments,
-                poster: {
-                    id: task.poster.id,
-                    name: task.poster.name,
-                    image: task.poster.image,
-                    rating: task.poster.rating,
-                    memberSince: task.poster.createdAt
-                },
-                messages: task.messages.map(msg => ({
-                    id: msg.id,
-                    content: msg.content,
-                    createdAt: msg.createdAt,
-                    isPoster: msg.sender.id === task.poster.id,
-                    sender: {
-                        id: msg.sender.id,
-                        name: msg.sender.name,
-                        image: msg.sender.image
-                    }
-                })),
-                submissions: task.submissions.map(sub => ({
-                    id: sub.id,
-                    content: sub.content,
-                    status: sub.status,
-                    createdAt: sub.createdAt,
-                    attachments: sub.attachments
-                })),
-                bid: userBid ? {
-                    id: userBid.id,
-                    amount: userBid.bidAmount,
-                    timeframe: "10 days", // This should be stored in the bid model
-                    message: userBid.content,
-                    status: userBid.status
-                } : null
-            }
-        };
+            data: taskData
+        }
+
     } catch (error) {
-        console.error("Error fetching doer task details:", error);
+        console.error("Error fetching task details:", error)
         return {
             success: false,
             error: "Failed to fetch task details"
-        };
+        }
     }
 }
 
@@ -1034,7 +1062,6 @@ export async function getDoerTasks(userId: string) {
                 budget: task.budget,
                 deadline: task.deadline,
                 status: task.status.toLowerCase(),
-                progress: getTaskProgress(task.status),
                 createdAt: task.createdAt,
                 updatedAt: task.updatedAt,
                 attachments: task.attachments,
@@ -1050,6 +1077,273 @@ export async function getDoerTasks(userId: string) {
         return {
             success: false,
             error: "Failed to fetch assigned tasks"
+        };
+    }
+}
+
+export async function updateTaskStatus(
+    taskId: string, 
+    userId: string,
+    newStatus: string
+) {
+    try {
+        if (!taskId || !userId || !newStatus) {
+            return {
+                success: false,
+                error: "Task ID, User ID, and new status are required"
+            };
+        }
+
+        // Find the task and verify the doer is assigned to it
+        const task = await prisma.assignment.findUnique({
+            where: {
+                id: taskId,
+                doerId: userId, // Ensure the doer is the one updating status
+            },
+        });
+
+        if (!task) {
+            return { 
+                success: false, 
+                error: "Task not found or you're not assigned to this task" 
+            };
+        }
+
+        // Validate status transitions
+        const currentStatus = task.status;
+        let isValidTransition = false;
+
+        switch (currentStatus) {
+            case "ASSIGNED":
+                // ASSIGNED -> IN_PROGRESS
+                isValidTransition = newStatus === "IN_PROGRESS";
+                break;
+            case "IN_PROGRESS":
+                // IN_PROGRESS -> UNDER_REVIEW
+                isValidTransition = newStatus === "UNDER_REVIEW";
+                break;
+            default:
+                isValidTransition = false;
+        }
+
+        if (!isValidTransition) {
+            return {
+                success: false,
+                error: `Cannot change status from ${currentStatus} to ${newStatus}`
+            };
+        }
+
+        // Update the task status
+        const updatedTask = await prisma.assignment.update({
+            where: {
+                id: taskId,
+            },
+            data: {
+                status: newStatus as AssignmentStatus,
+            },
+        });
+
+        return { 
+            success: true, 
+            data: updatedTask,
+            message: `Task status updated to ${newStatus}` 
+        };
+    } catch (error) {
+        console.error("Error updating task status:", error);
+        return { 
+            success: false, 
+            error: "Failed to update task status" 
+        };
+    }
+}
+
+export async function createTaskSubmission(
+    taskId: string,
+    userId: string,
+    content: string,
+    attachments: any[]
+) {
+    try {
+        if (!taskId || !userId) {
+            return {
+                success: false,
+                error: "Task ID and User ID are required"
+            };
+        }
+
+        console.log("Creating submission with attachments:", attachments);
+
+        // Find the task and verify the doer is assigned to it
+        const task = await prisma.assignment.findUnique({
+            where: {
+                id: taskId,
+                doerId: userId, // Ensure the doer is the one submitting
+            },
+        });
+
+        if (!task) {
+            return { 
+                success: false, 
+                error: "Task not found or you're not assigned to this task" 
+            };
+        }
+
+        // Ensure attachments is always an array with properly formatted objects
+        const processedAttachments = attachments && attachments.length > 0 
+            ? attachments.map(attachment => ({
+                url: attachment.url,
+                name: attachment.name || attachment.url.split('/').pop() || 'Attachment',
+                type: attachment.type || 'application/octet-stream'
+            }))
+            : [];
+
+        console.log("Processed attachments:", processedAttachments);
+
+        // Create the submission
+        const submission = await prisma.submission.create({
+            data: {
+                content,
+                attachments: processedAttachments,
+                status: "pending", // Default status for new submissions
+                assignmentId: taskId,
+                userId: userId
+            }
+        });
+
+        console.log("Created submission:", submission);
+
+        // Only update the task status to UNDER_REVIEW if it's not already in that state or completed
+        if (task.status !== "UNDER_REVIEW" && task.status !== "COMPLETED") {
+            await prisma.assignment.update({
+                where: {
+                    id: taskId,
+                },
+                data: {
+                    status: "UNDER_REVIEW" as AssignmentStatus,
+                }
+            });
+            
+            return {
+                success: true,
+                data: submission,
+                message: "Submission created successfully. Task is now under review."
+            };
+        }
+
+        return {
+            success: true,
+            data: submission,
+            message: "Additional submission created successfully."
+        };
+    } catch (error) {
+        console.error("Error creating submission:", error);
+        return {
+            success: false,
+            error: "Failed to create submission"
+        };
+    }
+}
+
+export async function updateSubmissionStatus(
+    submissionId: string,
+    userId: string,
+    newStatus: 'approved' | 'rejected'
+) {
+    try {
+        if (!submissionId || !userId) {
+            return {
+                success: false,
+                error: "Submission ID and User ID are required"
+            };
+        }
+
+        // Find the submission and verify the user is the poster of the assignment
+        const submission = await prisma.submission.findUnique({
+            where: {
+                id: submissionId
+            },
+            include: {
+                assignment: {
+                    select: {
+                        id: true,
+                        posterId: true,
+                        status: true
+                    }
+                }
+            }
+        });
+
+        if (!submission) {
+            return {
+                success: false,
+                error: "Submission not found"
+            };
+        }
+
+        // Verify the user is the poster of the assignment
+        if (submission.assignment.posterId !== userId) {
+            return {
+                success: false,
+                error: "You are not authorized to update this submission"
+            };
+        }
+
+        // Update the submission status
+        const updatedSubmission = await prisma.submission.update({
+            where: {
+                id: submissionId
+            },
+            data: {
+                status: newStatus
+            }
+        });
+
+        // If submission is approved, update the assignment status to COMPLETED
+        if (newStatus === 'approved') {
+            await prisma.assignment.update({
+                where: {
+                    id: submission.assignment.id
+                },
+                data: {
+                    status: "COMPLETED"
+                }
+            });
+
+            return {
+                success: true,
+                data: updatedSubmission,
+                message: "Submission approved and task marked as completed."
+            };
+        }
+
+        // If submission is rejected, update the assignment status back to IN_PROGRESS
+        if (newStatus === 'rejected') {
+            await prisma.assignment.update({
+                where: {
+                    id: submission.assignment.id
+                },
+                data: {
+                    status: "IN_PROGRESS"
+                }
+            });
+
+            return {
+                success: true,
+                data: updatedSubmission,
+                message: "Submission rejected and task status set back to in progress."
+            };
+        }
+
+        return {
+            success: true,
+            data: updatedSubmission,
+            message: `Submission marked as ${newStatus}.`
+        };
+    } catch (error) {
+        console.error("Error updating submission status:", error);
+        return {
+            success: false,
+            error: "Failed to update submission status"
         };
     }
 }

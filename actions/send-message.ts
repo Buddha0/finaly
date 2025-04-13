@@ -2,15 +2,21 @@
 
 import prisma from "@/lib/db";
 import { pusherServer } from "@/lib/pusher";
+import { auth } from "@clerk/nextjs/server";
 
 export async function sendMessage(
   content: string,
   assignmentId: string,
   receiverId: string,
-  senderId: string
+  fileUrl?: string,
+  fileName?: string,
+  fileType?: string
 ) {
   try {
-    if (!senderId) {
+    // Get the current user's ID from auth
+    const { userId } = await auth();
+    
+    if (!userId) {
       throw new Error("Unauthorized");
     }
     
@@ -18,11 +24,11 @@ export async function sendMessage(
       throw new Error("Assignment ID is required");
     }
 
-    if (!content.trim()) {
+    if (!content.trim() && !fileUrl) {
       throw new Error("Message cannot be empty");
     }
 
-    console.log("Saving message:", { content, assignmentId, receiverId, senderId });
+    console.log("Saving message:", { content, assignmentId, receiverId, senderId: userId });
 
     // Check if assignment exists
     const assignment = await prisma.assignment.findUnique({
@@ -38,8 +44,9 @@ export async function sendMessage(
       data: {
         content,
         assignmentId,
-        senderId,
         receiverId,
+        senderId: userId,
+        fileUrls: fileUrl, // Store the file URL or JSON array of file objects
       },
       include: {
         sender: {
@@ -47,7 +54,7 @@ export async function sendMessage(
             id: true,
             name: true,
             image: true,
-          }
+          },
         },
         receiver: {
           select: {
