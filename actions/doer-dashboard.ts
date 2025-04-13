@@ -2,7 +2,7 @@
 
 import prisma from "@/lib/db";
 import { AssignmentStatus } from "@prisma/client";
-import { mapAssignmentStatusToTaskStatus } from "@/types/doer-dashboard";
+
 
 /**
  * Get active tasks for a doer
