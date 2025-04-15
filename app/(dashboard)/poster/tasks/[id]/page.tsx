@@ -144,6 +144,11 @@ export default function TaskDetails() {
             payment: result.data.payment
           }
           setTask(transformedTask)
+          
+          // If task is no longer OPEN and we're on bids tab, switch to details
+          if (transformedTask.status !== "OPEN" && activeTab === "bids") {
+            setActiveTab("details");
+          }
         } else {
           toast.error(result.error || "Failed to load task details")
           router.push("/poster/tasks")
@@ -158,7 +163,7 @@ export default function TaskDetails() {
     }
 
     loadTaskDetails()
-  }, [user?.id, params.id, router])
+  }, [user?.id, params.id, router, activeTab])
 
   const handleAcceptBid = async (bidId: string) => {
     if (!user?.id || !task) return;
@@ -176,7 +181,7 @@ export default function TaskDetails() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          taskId: task.id,
+          taskId: task?.id,
           bidId: bidId,
         }),
       });
@@ -356,10 +361,10 @@ export default function TaskDetails() {
         <div className="grid gap-6 md:grid-cols-3 w-full">
           <div className="md:col-span-2 space-y-6">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid grid-cols-5 w-full">
+              <TabsList className="grid w-full" style={{ gridTemplateColumns: `repeat(${task.status === "OPEN" ? 6 : 5}, minmax(0, 1fr))` }}>
                 <TabsTrigger value="details">Details</TabsTrigger>
                 <TabsTrigger value="attachments">Attachments</TabsTrigger>
-                <TabsTrigger value="bids">Bids</TabsTrigger>
+                {task.status === "OPEN" && <TabsTrigger value="bids">Bids</TabsTrigger>}
                 <TabsTrigger value="messages">Messages</TabsTrigger>
                 <TabsTrigger value="submissions">Submissions</TabsTrigger>
                 <TabsTrigger value="dispute">Raise Dispute</TabsTrigger>
@@ -428,96 +433,98 @@ export default function TaskDetails() {
                 </Card>
               </TabsContent>
 
-              <TabsContent value="bids" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Bids {task.bids.length > 0 && `(${task.bids.length})`}</CardTitle>
-                    <CardDescription>Review and accept bids from doers</CardDescription>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {task.bids && task.bids.length > 0 ? (
-                      task.bids.map((bid) => (
-                        <div key={bid.id} className="border rounded-lg p-4 space-y-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <Avatar className="h-10 w-10">
-                                <AvatarImage src={bid.user.image || undefined} />
-                                <AvatarFallback>
-                                  {bid.user.name?.[0] || "D"}
-                                </AvatarFallback>
-                              </Avatar>
-                              <div>
-                                <h3 className="font-medium">{bid.user.name}</h3>
-                                <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                                  <span>{bid.user.rating?.toFixed(1) || "No rating"}</span>
+              {task.status === "OPEN" && (
+                <TabsContent value="bids" className="mt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Bids {task.bids.length > 0 && `(${task.bids.length})`}</CardTitle>
+                      <CardDescription>Review and accept bids from doers</CardDescription>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {task.bids && task.bids.length > 0 ? (
+                        task.bids.map((bid) => (
+                          <div key={bid.id} className="border rounded-lg p-4 space-y-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-3">
+                                <Avatar className="h-10 w-10">
+                                  <AvatarImage src={bid.user.image || undefined} />
+                                  <AvatarFallback>
+                                    {bid.user.name?.[0] || "D"}
+                                  </AvatarFallback>
+                                </Avatar>
+                                <div>
+                                  <h3 className="font-medium">{bid.user.name}</h3>
+                                  <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                    <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
+                                    <span>{bid.user.rating?.toFixed(1) || "No rating"}</span>
+                                  </div>
                                 </div>
                               </div>
                             </div>
-                          </div>
 
-                          <div className="grid grid-cols-2 gap-4 bg-muted/30 p-3 rounded-md">
-                            <div>
-                              <h4 className="text-xs font-medium text-muted-foreground mb-1">Your Original Budget</h4>
-                              <p className="text-base font-medium">${task.budget.toFixed(2)}</p>
+                            <div className="grid grid-cols-2 gap-4 bg-muted/30 p-3 rounded-md">
+                              <div>
+                                <h4 className="text-xs font-medium text-muted-foreground mb-1">Your Original Budget</h4>
+                                <p className="text-base font-medium">${task.budget.toFixed(2)}</p>
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-medium text-muted-foreground mb-1">Doer Proposed Bid</h4>
+                                <p className={`text-base font-medium ${bid.bidAmount <= task.budget ? "text-green-600" : "text-red-600"}`}>
+                                  ${bid.bidAmount.toFixed(2)}
+                                  {bid.bidAmount <= task.budget ?
+                                    <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Within budget</span> :
+                                    <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">Above budget</span>}
+                                </p>
+                              </div>
                             </div>
+
                             <div>
-                              <h4 className="text-xs font-medium text-muted-foreground mb-1">Doer Proposed Bid</h4>
-                              <p className={`text-base font-medium ${bid.bidAmount <= task.budget ? "text-green-600" : "text-red-600"}`}>
-                                ${bid.bidAmount.toFixed(2)}
-                                {bid.bidAmount <= task.budget ?
-                                  <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">Within budget</span> :
-                                  <span className="ml-2 text-xs bg-red-100 text-red-800 px-2 py-0.5 rounded-full">Above budget</span>}
+                              <h4 className="text-xs font-medium text-muted-foreground mb-1">Bid Description</h4>
+                              <p className="text-sm">{bid.content}</p>
+                            </div>
+
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-muted-foreground">
+                                Submitted {new Date(bid.createdAt).toLocaleString()}
                               </p>
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="destructive"
+                                  size="sm"
+                                  onClick={() => handleRejectBid(bid.id)}
+                                  disabled={processingBid === bid.id}
+                                >
+                                  {processingBid === bid.id ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      Processing...
+                                    </>
+                                  ) : "Reject Bid"}
+                                </Button>
+                                <Button
+                                  variant="default"
+                                  size="sm"
+                                  onClick={() => handleAcceptBid(bid.id)}
+                                  disabled={processingBid === bid.id}
+                                >
+                                  {processingBid === bid.id ? (
+                                    <>
+                                      <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                                      Processing...
+                                    </>
+                                  ) : "Accept Bid"}
+                                </Button>
+                              </div>
                             </div>
                           </div>
-
-                          <div>
-                            <h4 className="text-xs font-medium text-muted-foreground mb-1">Bid Description</h4>
-                            <p className="text-sm">{bid.content}</p>
-                          </div>
-
-                          <div className="flex items-center justify-between">
-                            <p className="text-xs text-muted-foreground">
-                              Submitted {new Date(bid.createdAt).toLocaleString()}
-                            </p>
-                            <div className="flex gap-2">
-                              <Button
-                                variant="destructive"
-                                size="sm"
-                                onClick={() => handleRejectBid(bid.id)}
-                                disabled={processingBid === bid.id}
-                              >
-                                {processingBid === bid.id ? (
-                                  <>
-                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                    Processing...
-                                  </>
-                                ) : "Reject Bid"}
-                              </Button>
-                              <Button
-                                variant="default"
-                                size="sm"
-                                onClick={() => handleAcceptBid(bid.id)}
-                                disabled={processingBid === bid.id}
-                              >
-                                {processingBid === bid.id ? (
-                                  <>
-                                    <Loader2 className="h-3 w-3 animate-spin mr-1" />
-                                    Processing...
-                                  </>
-                                ) : "Accept Bid"}
-                              </Button>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-muted-foreground text-center py-8">No bids received yet</p>
-                    )}
-                  </CardContent>
-                </Card>
-              </TabsContent>
+                        ))
+                      ) : (
+                        <p className="text-muted-foreground text-center py-8">No bids received yet</p>
+                      )}
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              )}
 
               <TabsContent value="messages" className="mt-4">
                 <Card>
@@ -526,10 +533,14 @@ export default function TaskDetails() {
                     <CardDescription>Communication with your doer</CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <ChatInterface
-                      assignmentId={task.id}
-                      receiverId={task.doerInfo.id}
-                    />
+                    {task.doerInfo ? (
+                      <ChatInterface
+                        assignmentId={task.id}
+                        receiverId={task.doerInfo.id}
+                      />
+                    ) : (
+                      <p className="text-center py-4 text-muted-foreground">No doer assigned to this task yet</p>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -635,6 +646,7 @@ export default function TaskDetails() {
                         </label>
                         <div className="flex items-center gap-2 mb-2">
                           <UploadButton
+                          className = "bg-red-500"
                             endpoint="evidence"
                             onClientUploadComplete={(res) => {
                               const newFiles = res.map((file) => ({

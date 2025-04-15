@@ -1,5 +1,5 @@
 import { CuboidIcon as Cube } from "lucide-react"
-import { Button } from "@/components/ui/button"
+
 
 export function FeaturesSection() {
     return (
@@ -48,13 +48,13 @@ export function FeaturesSection() {
                                 a seamless way to enhance your learning journey.
                             </p>
                         </div>
-                        <div className="flex gap-4">
+                        {/* <div className="flex gap-4">
                             <Button variant="outline">Learn More</Button>
                             <Button>
                                 Sign Up
                                 <span className="ml-2">→</span>
                             </Button>
-                        </div>
+                        </div> */}
                     </div>
 
                     

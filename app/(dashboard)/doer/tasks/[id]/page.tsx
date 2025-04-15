@@ -385,41 +385,37 @@ export default function TaskDetail() {
                   </CardHeader>
                   <CardContent className="prose max-w-full">
                     <div dangerouslySetInnerHTML={{ __html: task.description }} />
-                  </CardContent>
-                </Card>
-              </TabsContent>
-
-              <TabsContent value="attachments" className="mt-4">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Task Attachments</CardTitle>
-                    <CardDescription>
-                      Files shared by the task poster
-                    </CardDescription>
-                  </CardHeader>
-                  <CardContent>
-                    {task.attachments && task.attachments.length > 0 ? (
-                      <div className="space-y-2">
-                        {task.attachments.map((attachment: any, index: number) => (
-                          <div
-                            key={index}
-                            className="flex items-center justify-between p-2 border rounded-md"
-                          >
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-blue-500" />
-                              <span>{attachment.name}</span>
+                    
+                    {/* Display attachments within the details tab */}
+                    {task.attachments && Array.isArray(task.attachments) && task.attachments.length > 0 ? (
+                      <div className="mt-6 space-y-2">
+                        <h3 className="text-lg font-semibold">Attachments</h3>
+                        <div className="space-y-2">
+                          {task.attachments.map((attachment, index) => (
+                            <div
+                              key={index}
+                              className="flex items-center justify-between p-2 border rounded-md"
+                            >
+                              <div className="flex items-center gap-2">
+                                <FileText className="h-4 w-4 text-blue-500" />
+                                <span>{typeof attachment === 'string' 
+                                  ? attachment.split('/').pop() 
+                                  : attachment.name || attachment.url?.split('/').pop() || 'File'}</span>
+                              </div>
+                              <Button size="sm" variant="ghost" asChild>
+                                <a 
+                                  href={typeof attachment === 'string' ? attachment : attachment.url} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer"
+                                >
+                                  <Download className="h-4 w-4" />
+                                </a>
+                              </Button>
                             </div>
-                            <Button size="sm" variant="ghost" asChild>
-                              <a href={attachment.url} target="_blank" rel="noopener noreferrer">
-                                <Download className="h-4 w-4" />
-                              </a>
-                            </Button>
-                          </div>
-                        ))}
+                          ))}
+                        </div>
                       </div>
-                    ) : (
-                      <p className="text-muted-foreground">No attachments available</p>
-                    )}
+                    ) : null}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -488,6 +484,7 @@ export default function TaskDetail() {
                         
                         <UploadButton
                           endpoint="fileSubmissionUploader"
+                          
                           onClientUploadComplete={(res) => {
                             if (res && res.length > 0) {
                               const newFiles = res.map(file => ({
@@ -508,7 +505,7 @@ export default function TaskDetail() {
                             setIsUploading(false);
                             toast.error("Failed to upload file");
                           }}
-                          className="ut-button:w-full ut-button:flex ut-button:items-center ut-button:justify-center ut-button:gap-2 ut-button:bg-background"
+                          className="w-full bg-red-500"
                         />
                       </div>
                       <Button 
