@@ -29,6 +29,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import type React from "react"
 import { type ReactNode } from "react"
+import { NotificationsPanel } from "@/app/(dashboard)/components/notifications-panel"
 
 interface DashboardLayoutProps {
   children: ReactNode
@@ -82,13 +83,13 @@ export function DashboardLayout({ children, navItems, userRole, userName, userAv
           </div>
         </SidebarContent>
         <SidebarFooter className="border-t p-4">
-          <SignedOut>
+          {/* <SignedOut>
             <SignInButton />
 
           </SignedOut>
           <SignedIn>
             <UserButton />
-          </SignedIn>
+          </SignedIn> */}
           {/* <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="w-full justify-start gap-2">
@@ -134,27 +135,9 @@ export function DashboardLayout({ children, navItems, userRole, userName, userAv
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="outline" size="icon" className="relative">
-                  <Bell className="h-4 w-4" />
-                  {notifications > 0 && (
-                    <Badge variant="destructive" className="absolute -right-1 -top-1 h-4 w-4 p-0 text-[10px]">
-                      {notifications}
-                    </Badge>
-                  )}
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem>New message from John</DropdownMenuItem>
-                <DropdownMenuItem>Task status updated</DropdownMenuItem>
-                <DropdownMenuItem>New bid on your task</DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <NotificationsPanel />
 
-            <DropdownMenu>
+            {/* <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="rounded-full">
                   <Avatar className="h-8 w-8">
@@ -177,7 +160,15 @@ export function DashboardLayout({ children, navItems, userRole, userName, userAv
                   <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
-            </DropdownMenu>
+            </DropdownMenu> */}
+
+            <SignedOut>
+              <SignInButton />
+            </SignedOut>
+            <SignedIn>
+              <UserButton />
+            </SignedIn>
+
           </div>
         </header>
         <main className="flex-1 p-4 md:p-6 w-full">{children}</main>

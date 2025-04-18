@@ -4,10 +4,10 @@ import { auth } from "@clerk/nextjs/server";
 import prisma from "@/lib/db";
 import { AssignmentStatus } from "@prisma/client";
 
-
 export async function acceptBid(bidId: string) {
   try {
-    const { userId } = await auth();
+    const session = await auth();
+    const userId = session?.userId;
     
     if (!userId) {
       throw new Error("Unauthorized");
@@ -45,7 +45,6 @@ export async function acceptBid(bidId: string) {
       taskId: bid.assignmentId,
       amount: bid.bidAmount,
       doerId: bid.userId,
-      hasStripeAccount: Boolean(bid.user.stripeConnectAccountId),
     };
   } catch (error: any) {
     console.error("Accept bid error:", error);

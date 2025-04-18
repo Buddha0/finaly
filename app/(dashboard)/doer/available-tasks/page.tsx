@@ -12,6 +12,7 @@ import { useUser } from "@clerk/nextjs"
 import { FileText, Home, ListChecks, Loader2, Search } from "lucide-react"
 import { useEffect, useMemo, useState, useTransition } from "react"
 import { toast } from "sonner"
+import { useRouter } from "next/navigation"
 
 const navItems = [
   {
@@ -47,6 +48,7 @@ interface Task {
   status: string
   bidsCount: number
   createdAt: Date
+  attachments?: any // This can be an array of URLs or attachment objects
 }
 
 export default function AvailableTasks() {
@@ -63,6 +65,8 @@ export default function AvailableTasks() {
   const [budgetRange, setBudgetRange] = useState([500])
   const [deadline, setDeadline] = useState("any")
   const [sortBy, setSortBy] = useState("newest")
+  
+  const router = useRouter()
   
   // Apply filters to tasks in memory
   const filteredTasks = useMemo(() => {
@@ -170,8 +174,35 @@ export default function AvailableTasks() {
   const selectedTask = allTasks.find((task) => task.id === selectedTaskId);
 
   const handleOpenBidDialog = (taskId: string) => {
+    if (!taskId) {
+      console.error("Invalid task ID");
+      toast.error("Invalid task ID");
+      return;
+    }
+    
+    console.log("Opening bid dialog for task:", taskId);
     setSelectedTaskId(taskId);
     setBidDialogOpen(true);
+  };
+
+  const handleViewTaskDetails = (taskId: string) => {
+    if (!taskId) {
+      console.error("Invalid task ID");
+      toast.error("Invalid task ID");
+      return;
+    }
+    
+    // Debug the task ID
+    console.log("Task ID in handleViewTaskDetails:", taskId);
+    console.log("Task ID type:", typeof taskId);
+    console.log("Task ID length:", taskId.length);
+    console.log("Task ID characters:", [...taskId].map(c => `${c} (${c.charCodeAt(0)})`).join(', '));
+    
+    console.log("Navigating to task details:", taskId);
+    router.push(`/doer/tasks/${taskId}`);
+    toast.info("Viewing task details", {
+      description: `Task ID: ${taskId}`
+    });
   };
 
   const handleBidSubmit = async (bidData: { taskId: string; bidContent: string; bidAmount: number }): Promise<void> => {
@@ -324,32 +355,32 @@ export default function AvailableTasks() {
               </div>
             ) : filteredTasks.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-center">
-                <p className="text-muted-foreground mb-2">No tasks found matching your criteria</p>
-                <Button variant="outline" onClick={() => {
-                  setSearch("")
-                  setCategory("all")
-                  setBudgetRange([500])
-                  setDeadline("any")
-                  setSortBy("newest")
-                }}>
-                  Reset Filters
-                </Button>
+                <img src="/no-tasks.svg" alt="No tasks" className="mb-4 h-40 w-40 opacity-50" />
+                <h3 className="mb-2 text-xl font-medium">No Tasks Found</h3>
+                <p className="text-muted-foreground">
+                  {loading
+                    ? "Loading available tasks..."
+                    : "There are no available tasks matching your filters."}
+                </p>
               </div>
             ) : (
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
                 {filteredTasks.map((task) => (
-                  <TaskCard 
-                    key={task.id} 
+                  <TaskCard
+                    key={task.id}
                     id={task.id}
                     title={task.title}
                     description={task.description}
                     category={task.category}
                     budget={task.budget}
-                    deadline={task.deadline.toString()}
-                    status={task.status as any}
+                    deadline={task.deadline}
+                    status="open"
                     bidsCount={task.bidsCount}
-                    viewType="doer" 
-                    onPlaceBid={() => handleOpenBidDialog(task.id)} 
+                    posterName="Client"
+                    viewType="doer"
+                    attachments={task.attachments}
+                    onPlaceBid={() => handleOpenBidDialog(task.id)}
+                    onViewDetails={() => handleViewTaskDetails(task.id)}
                   />
                 ))}
               </div>

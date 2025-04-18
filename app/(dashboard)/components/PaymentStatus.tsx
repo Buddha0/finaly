@@ -7,7 +7,7 @@ interface PaymentStatusProps {
   status: Status;
   amount: number;
   date: Date;
-  stripeId?: string | null;
+
 }
 
 const statusConfig = {

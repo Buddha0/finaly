@@ -10,11 +10,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useUser } from "@clerk/nextjs"
 import { Role } from "@prisma/client"
 import { formatDistanceToNow } from "date-fns"
-import { CheckCircle, Clock, FilePlus, FileText, Home, ListChecks, MessageSquare, ShieldCheck } from "lucide-react"
+import { CheckCircle, Clock, FilePlus, FileText, Home, ListChecks, MessageSquare, ShieldCheck, Gavel } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useRef } from "react"
 import { toast } from "sonner"
 import { getPosterBids, getPosterStats, getPosterTasks, getTaskActivities } from "./actions"
+import { Badge } from "@/components/ui/badge"
 
 const navItems = [
   {
@@ -31,6 +32,11 @@ const navItems = [
     href: "/poster/create-task",
     label: "Create Task",
     icon: FilePlus,
+  },
+  {
+    href: "/poster/disputes",
+    label: "Disputes",
+    icon: Gavel,
   },
   {
     href: "/poster/verification",
@@ -129,7 +135,10 @@ export default function PosterDashboard() {
     <DashboardLayout navItems={navItems} userRole="poster" userName={user?.fullName || "Sarah Williams"}>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <Badge variant="outline" className="bg-green-100 text-green-800 text-sm font-medium">You are a Poster</Badge>
+          </div>
           <Button onClick={handleCreateTask}>
             <FilePlus className="mr-2 h-4 w-4" />
             Create New Task

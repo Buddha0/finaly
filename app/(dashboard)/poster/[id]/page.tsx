@@ -237,7 +237,7 @@ export default function TaskDetail() {
   };
 
   const handleEditTask = () => {
-    router.push(`/poster/edit-task/${taskId}`);
+    router.push(`/poster/create-task?edit=${taskId}`);
   };
 
   const handleApproveSubmission = async (submissionId: string) => {

@@ -307,17 +307,60 @@ export default function DisputeDetail() {
               <TabsContent value="details">
                 <Card>
                   <CardHeader>
-                    <CardTitle>Dispute Reason</CardTitle>
+                    <CardTitle>Dispute Information</CardTitle>
                     <CardDescription>
                       Filed on {formatDate(dispute.createdAt)}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="whitespace-pre-wrap">{dispute.reason}</div>
+                    <div>
+                      <h3 className="text-lg font-medium mb-2">Dispute Reason</h3>
+                      <div className="whitespace-pre-wrap border p-4 rounded-md bg-gray-50 mb-6">
+                        {dispute.reason}
+                      </div>
+                    </div>
+                    
+                    {dispute.hasResponse ? (
+                      <div className="mt-8">
+                        <h3 className="text-lg font-medium mb-2">Response from {dispute.initiator.role === "POSTER" ? "Doer" : "Poster"}</h3>
+                        <div className="whitespace-pre-wrap border p-4 rounded-md bg-blue-50 mb-6">
+                          {dispute.response}
+                        </div>
+                        
+                        {dispute.responseEvidence && dispute.responseEvidence.length > 0 && (
+                          <div className="mt-4">
+                            <h3 className="text-sm font-medium mb-2">Response Evidence</h3>
+                            <div className="space-y-2">
+                              {dispute.responseEvidence.map((file: any, index: number) => (
+                                <div key={index} className="flex items-center gap-2 p-2 border rounded">
+                                  <FileText className="h-4 w-4 text-muted-foreground" />
+                                  <span className="text-sm truncate">{file.name}</span>
+                                  <a
+                                    href={file.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="ml-auto text-sm text-blue-500 hover:underline"
+                                  >
+                                    <Download className="h-4 w-4" />
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="mt-8 p-4 border rounded-md bg-yellow-50">
+                        <h3 className="text-md font-medium mb-2">Awaiting Response</h3>
+                        <p className="text-sm text-muted-foreground">
+                          The other party has not yet responded to this dispute.
+                        </p>
+                      </div>
+                    )}
                     
                     {dispute.evidence && dispute.evidence.length > 0 && (
                       <div className="mt-6">
-                        <h3 className="text-sm font-medium mb-2">Evidence Files</h3>
+                        <h3 className="text-sm font-medium mb-2">Dispute Evidence</h3>
                         <div className="space-y-2">
                           {dispute.evidence.map((file: any, index: number) => (
                             <div key={index} className="flex items-center gap-2 p-2 border rounded">
@@ -337,8 +380,8 @@ export default function DisputeDetail() {
                       </div>
                     )}
                     
-                    {!isResolved && (
-                      <div className="mt-6">
+                    {(!isResolved && (dispute.hasResponse || confirm("Resolve without response?"))) && (
+                      <div className="mt-8">
                         <h3 className="text-sm font-medium mb-2">Resolution Notes</h3>
                         <Textarea
                           placeholder="Enter your decision notes and reasoning here..."

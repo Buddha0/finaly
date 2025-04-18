@@ -3,7 +3,6 @@
 import prisma from "@/lib/db";
 import { AssignmentStatus } from "@prisma/client";
 
-
 /**
  * Get active tasks for a doer
  */
@@ -45,6 +44,8 @@ export async function getActiveTasks(userId: string) {
       category: assignment.category,
       poster: assignment.poster,
       hasSubmissions: assignment.submissions.length > 0,
+      createdAt: assignment.createdAt,
+      updatedAt: assignment.updatedAt
     }))
   } catch (error) {
     console.error('Error fetching active tasks:', error)
@@ -260,4 +261,219 @@ function truncateDescription(description: string): string {
     return description.substring(0, 120) + '...'
   }
   return description
+}
+
+// Add a new direct function to fetch task by ID without any filtering
+export async function getTaskById(taskId: string) {
+    try {
+        console.log("Direct task lookup for ID:", taskId);
+        
+        if (!taskId) {
+            return {
+                success: false,
+                error: "Task ID is required"
+            };
+        }
+        
+        // Simple direct lookup
+        const task = await prisma.assignment.findUnique({
+            where: {
+                id: taskId
+            },
+            include: {
+                poster: {
+                    select: {
+                        id: true,
+                        name: true,
+                        image: true,
+                        rating: true,
+                        createdAt: true
+                    }
+                }
+            }
+        });
+        
+        if (!task) {
+            return {
+                success: false,
+                error: "Task not found"
+            };
+        }
+        
+        return {
+            success: true,
+            data: task
+        };
+    } catch (error) {
+        console.error("Error in direct task lookup:", error);
+        return {
+            success: false,
+            error: "Failed to fetch task details"
+        };
+    }
+}
+
+// Debug function that verifies the task ID by doing a direct lookup
+export async function debugTaskId(taskId: string) {
+    console.log("Debug task ID function called with:", taskId);
+    console.log("Task ID type:", typeof taskId);
+    console.log("Task ID length:", taskId.length);
+    console.log("Task ID characters:", [...taskId].map(c => `${c} (${c.charCodeAt(0)})`).join(', '));
+    
+    try {
+        // Run a raw SQL query to see if we can match by ID
+        const rawResults = await prisma.$queryRaw`
+            SELECT id, title 
+            FROM "Assignment" 
+            WHERE id = ${taskId}
+        `;
+        
+        console.log("Raw SQL query results:", rawResults);
+        
+        // Also check the standard Prisma query
+        const task = await prisma.assignment.findUnique({
+            where: {
+                id: taskId
+            },
+            select: {
+                id: true,
+                title: true
+            }
+        });
+        
+        console.log("Prisma query result:", task);
+        
+        return {
+            success: !!task,
+            data: {
+                rawResults,
+                prismaTask: task
+            }
+        };
+    } catch (error) {
+        console.error("Error debugging task ID:", error);
+        return {
+            success: false,
+            error: "Error querying database"
+        };
+    }
+}
+
+// Fetch a task by ID directly without any access control - for debugging and fixing the task not found issue
+export async function fetchTaskDirectly(taskId: string) {
+    try {
+        console.log("Direct task fetch for ID:", taskId);
+        
+        if (!taskId) {
+            return {
+                success: false,
+                error: "Task ID is required"
+            };
+        }
+        
+        // Simple direct lookup with full details
+        const task = await prisma.assignment.findUnique({
+            where: {
+                id: taskId
+            },
+            include: {
+                poster: {
+                    select: {
+                        id: true,
+                        name: true,
+                        image: true,
+                        rating: true,
+                        createdAt: true
+                    }
+                },
+                doer: {
+                    select: {
+                        id: true,
+                        name: true,
+                        image: true,
+                        rating: true
+                    }
+                },
+                bids: {
+                    include: {
+                        user: {
+                            select: {
+                                id: true,
+                                name: true
+                            }
+                        }
+                    }
+                },
+                submissions: true,
+                messages: {
+                    include: {
+                        sender: {
+                            select: {
+                                id: true,
+                                name: true,
+                                image: true
+                            }
+                        }
+                    }
+                }
+            }
+        });
+        
+        if (!task) {
+            return {
+                success: false,
+                error: "Task not found in database"
+            };
+        }
+        
+        // Create a complete response with all possible fields
+        const taskData = {
+            ...task,
+            status: task.status.toLowerCase(),
+            poster: {
+                id: task.poster?.id || "",
+                name: task.poster?.name || "Client",
+                image: task.poster?.image || null,
+                rating: task.poster?.rating || 0,
+                memberSince: task.poster?.createdAt || new Date()
+            },
+            messages: task.messages.map(msg => ({
+                id: msg.id,
+                content: msg.content,
+                createdAt: msg.createdAt,
+                sender: {
+                    id: msg.sender.id,
+                    name: msg.sender.name || "User",
+                    image: msg.sender.image
+                }
+            })),
+            submissions: task.submissions.map(sub => ({
+                id: sub.id,
+                content: sub.content,
+                status: sub.status,
+                createdAt: sub.createdAt,
+                attachments: sub.attachments
+            })),
+            bid: task.bids.length > 0 ? {
+                id: task.bids[0].id,
+                amount: task.bids[0].bidAmount,
+                timeframe: "Not specified",
+                message: task.bids[0].content,
+                status: task.bids[0].status
+            } : null
+        };
+        
+        console.log("Task data prepared successfully:", task.id);
+        
+        return {
+            success: true,
+            data: taskData
+        };
+    } catch (error) {
+        console.error("Error in direct task fetch:", error);
+        return {
+            success: false,
+            error: "Failed to fetch task details: " + (error instanceof Error ? error.message : String(error))
+        };
+    }
 }

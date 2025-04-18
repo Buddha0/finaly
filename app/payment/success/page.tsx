@@ -7,6 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
+import Link from "next/link";
 
 function PaymentSuccessContent() {
   const router = useRouter();
@@ -152,30 +153,29 @@ function PaymentSuccessContent() {
   }
 
   return (
-    <div className="flex items-center justify-center min-h-screen bg-muted/30">
-      <Card className="w-full max-w-md shadow-lg">
-        <CardHeader className="text-center">
-          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
-            <CheckCircle2 className="h-10 w-10 text-green-600" />
+    <div className="flex flex-col items-center justify-center min-h-screen px-4">
+      <div className="max-w-md w-full p-6 bg-white rounded-lg shadow-lg">
+        <div className="flex flex-col items-center text-center">
+          <div className="p-3 rounded-full bg-green-100 mb-4">
+            <CheckCircle2 className="h-16 w-16 text-green-600" />
           </div>
-          <CardTitle className="text-2xl font-bold text-green-600">Payment Successful!</CardTitle>
-          <CardDescription>
-            Your payment has been processed successfully. The task has been assigned to the doer.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span>Redirecting to dashboard in {countdown} seconds</span>
-              <span>{Math.round(progress)}%</span>
-            </div>
-            <Progress value={progress} className="h-2" />
+          <h1 className="text-2xl font-bold text-gray-800 mb-2">
+            Payment Successful!
+          </h1>
+          <p className="text-gray-600 mb-6">
+            Your payment has been successfully processed. The amount is securely
+            held until the assignment is completed.
+          </p>
+          <p className="text-sm text-gray-500 mb-8">
+            Payment ID: {taskId}
+          </p>
+          <div className="flex gap-4">
+            <Button asChild>
+              <Link href="/dashboard">Go to Dashboard</Link>
+            </Button>
           </div>
-          <Button className="w-full" onClick={handleManualRedirect}>
-            Go to Dashboard Now
-          </Button>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

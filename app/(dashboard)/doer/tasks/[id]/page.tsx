@@ -1,7 +1,7 @@
 "use client"
 
-import { createTaskSubmission, getDoerTaskDetails, updateTaskStatus } from "@/actions/utility/task-utility"
-import { getUserId } from "@/actions/utility/user-utilit"
+import { getUserId } from "@/actions/utility/user-utility"
+import { createTaskSubmission, updateTaskStatus } from "@/actions/utility/task-utility"
 import ChatInterface from "@/components/chat/ChatInterface"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -13,6 +13,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { UploadButton } from "@/utils/uploadthing"
+import { DisputeResponseForm } from "@/components/dispute-response-form"
 import {
   AlertCircle,
   ArrowLeft,
@@ -33,6 +34,7 @@ import Link from "next/link"
 import { useParams } from 'next/navigation'
 import { useEffect, useState } from "react"
 import { toast } from "sonner"
+import { fetchTaskDirectly } from "@/actions/doer-dashboard"
 
 const navItems = [
   {
@@ -73,12 +75,11 @@ interface TaskData {
     image: string | null
     rating: number | null
     memberSince: Date
-  }
+  } | null
   messages: Array<{
     id: string
     content: string
     createdAt: Date
-    isPoster: boolean
     sender: {
       id: string
       name: string | null
@@ -99,11 +100,29 @@ interface TaskData {
     message: string
     status: string
   } | null
+  disputes?: Array<{
+    id: string
+    reason: string
+    status: string
+    createdAt: Date
+    initiatorId: string
+    hasResponse: boolean
+    response?: string
+  }>
 }
 
 export default function TaskDetail() {
   const params = useParams()
   const taskId = params.id as string
+  
+  console.log("Task ID from params:", taskId, "Params object:", params);
+  
+  // Debug the task ID format
+  if (taskId) {
+    console.log("Task ID length:", taskId.length);
+    console.log("Task ID characters:", [...taskId].map(c => `${c} (${c.charCodeAt(0)})`).join(', '));
+  }
+
   const [activeTab, setActiveTab] = useState("details")
   const [submissionMessage, setSubmissionMessage] = useState("")
   const [uploadedFiles, setUploadedFiles] = useState<{url: string, name: string, type: string}[]>([])
@@ -116,42 +135,58 @@ export default function TaskDetail() {
   const [disputeReason, setDisputeReason] = useState("")
   const [disputeEvidence, setDisputeEvidence] = useState<{url: string, name: string, type: string}[]>([])
   const [isSubmittingDispute, setIsSubmittingDispute] = useState(false)
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null)
 
-  // Fetch task details from the database
+  // Fetch current user ID on component mount
+  useEffect(() => {
+    const fetchUserId = async () => {
+      try {
+        const userId = await getUserId();
+        setCurrentUserId(userId);
+      } catch (error) {
+        console.error("Error fetching user ID:", error);
+      }
+    };
+    
+    fetchUserId();
+  }, []);
+
+  // Fetch task details from the database - completely replaced with simpler version
   useEffect(() => {
     const fetchTaskDetails = async () => {
       try {
-        setIsLoading(true)
-        setError(null)
+        setIsLoading(true);
+        setError(null);
         
-        // Get the current user's ID from auth
-        let userId;
-        try {
-          userId = await getUserId();
-        } catch (authError) {
-          console.error("Auth error:", authError);
-          setError("Authentication error. Please sign in again.");
-          setIsLoading(false);
-          return;
-        }
+        console.log("Fetching task details for ID:", taskId);
         
-        const response = await getDoerTaskDetails(taskId, userId)
+        // Use our direct fetch function which bypasses access control
+        const directResult = await fetchTaskDirectly(taskId);
+        console.log("Direct task fetch result:", directResult);
         
-        if (response.success && response.data) {
-          setTask(response.data)
+        if (directResult.success && directResult.data) {
+          const taskData = directResult.data;
+          setTask(taskData);
         } else {
-          setError(response.error || "Failed to load task")
+          console.error("Failed to load task:", directResult.error);
+          setError(directResult.error || "Failed to load task");
         }
       } catch (err) {
-        console.error("Error fetching task details:", err)
-        setError("An unexpected error occurred")
+        console.error("Error fetching task details:", err);
+        setError("An unexpected error occurred");
       } finally {
-        setIsLoading(false)
+        setIsLoading(false);
       }
-    }
+    };
 
-    fetchTaskDetails()
-  }, [taskId])
+    if (taskId) {
+      fetchTaskDetails();
+    } else {
+      console.error("No task ID found in URL params");
+      setError("Invalid task ID");
+      setIsLoading(false);
+    }
+  }, [taskId]);
 
   const formatDate = (dateString: string | Date) => {
     const options: Intl.DateTimeFormatOptions = { year: "numeric", month: "long", day: "numeric" }
@@ -251,8 +286,6 @@ export default function TaskDetail() {
     }
   };
 
-
-
   const handleStatusUpdate = async (newStatus: string) => {
     if (!task) return;
     
@@ -347,13 +380,22 @@ export default function TaskDetail() {
             <AlertCircle className="h-4 w-4" />
             <AlertTitle>Error</AlertTitle>
             <AlertDescription>
-              {error || "Task not found"} <Link href="/doer/active-tasks" className="underline">Return to tasks</Link>
+              {error || "Task not found"} 
             </AlertDescription>
           </Alert>
+          <div className="mt-6">
+            <Button asChild variant="default">
+              <Link href="/doer/available-tasks">Browse Available Tasks</Link>
+            </Button>
+          </div>
         </div>
       </DashboardLayout>
     )
   }
+
+  // Check if there's an active dispute that the user can respond to
+  const activeDispute = task.disputes?.find(d => d.status === "OPEN");
+  const canRespondToDispute = activeDispute && currentUserId && activeDispute.initiatorId !== currentUserId && !activeDispute.hasResponse;
 
   return (
     <DashboardLayout navItems={navItems} userRole="doer" userName="User">
@@ -368,8 +410,34 @@ export default function TaskDetail() {
           <Badge className={`${getStatusColor(task.status)} text-white ml-2`}>{getStatusLabel(task.status)}</Badge>
         </div>
 
+        {/* Add alert for active disputes */}
+        {activeDispute && (
+          <Alert variant={activeDispute.initiatorId === currentUserId ? "default" : "destructive"} className="my-2">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Task In Dispute</AlertTitle>
+            <AlertDescription>
+              {activeDispute.initiatorId === currentUserId 
+                ? "You have raised a dispute for this task. Waiting for admin review."
+                : canRespondToDispute
+                  ? "The other party has raised a dispute. Please respond below."
+                  : activeDispute.hasResponse
+                    ? "You have responded to this dispute. Waiting for admin review."
+                    : "This task is in dispute. Contact admin for more information."
+              }
+            </AlertDescription>
+          </Alert>
+        )}
+
         <div className="grid gap-6 md:grid-cols-3 w-full">
           <div className="md:col-span-2 space-y-6">
+            {/* If the user can respond to a dispute, show the response form */}
+            {canRespondToDispute && (
+              <DisputeResponseForm 
+                disputeId={activeDispute.id} 
+                assignmentTitle={task.title} 
+              />
+            )}
+
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
               <TabsList className="grid grid-cols-4 w-full">
                 <TabsTrigger value="details">Details</TabsTrigger>
@@ -425,14 +493,26 @@ export default function TaskDetail() {
                   <CardHeader>
                     <CardTitle>Messages</CardTitle>
                     <CardDescription>
-                      {task.bid?.status === "accepted" || task.status !== "open" ? "Communicate with the task poster" : "You can message after your bid is accepted"}
+                      {task.bid?.status === "accepted" || task.status !== "open" 
+                        ? "Communicate with the task poster" 
+                        : "You can message after your bid is accepted"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <ChatInterface
-                      assignmentId={task.id}
-                      receiverId={task.poster.id}
-                    />
+                    {task.bid?.status === "accepted" || task.status !== "open" ? (
+                      <ChatInterface
+                        assignmentId={task.id}
+                        receiverId={task.poster?.id || ""}
+                      />
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <MessageSquare className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">Messages Not Available Yet</h3>
+                        <p className="text-muted-foreground max-w-md">
+                          You will be able to communicate with the client once your bid has been accepted.
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
                 </Card>
               </TabsContent>
@@ -444,88 +524,98 @@ export default function TaskDetail() {
                     <CardDescription>Submit your completed work for review</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="space-y-4">
-                      <Textarea
-                        placeholder="Add a message to the poster about your submission..."
-                        rows={4}
-                        value={submissionMessage}
-                        onChange={(e) => setSubmissionMessage(e.target.value)}
-                      />
-                      <div className="bg-muted/50 p-4 rounded-md">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
-                          <Paperclip className="h-4 w-4" />
-                          <span>Attach files</span>
-                        </div>
-                        
-                        {/* Display uploaded files */}
-                        {uploadedFiles.length > 0 && (
-                          <div className="mb-3 space-y-2">
-                            {uploadedFiles.map((file, index) => (
-                              <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
-                                <div className="flex items-center gap-2">
-                                  <FileText className="h-4 w-4 text-blue-500" />
-                                  <span className="text-sm truncate max-w-[200px]">{file.name}</span>
-                                </div>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm" 
-                                  onClick={() => {
-                                    setUploadedFiles(files => files.filter((_, i) => i !== index));
-                                  }}
-                                >
-                                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M18 6L6 18M6 6l12 12"></path>
-                                  </svg>
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        
-                        <UploadButton
-                          endpoint="fileSubmissionUploader"
-                          
-                          onClientUploadComplete={(res) => {
-                            if (res && res.length > 0) {
-                              const newFiles = res.map(file => ({
-                                url: file.url || file.ufsUrl, // Support both properties
-                                name: file.name || (file.url || file.ufsUrl).split('/').pop() || 'File',
-                                type: file.type || 'application/octet-stream'
-                              }));
-                              setUploadedFiles(prev => [...prev, ...newFiles]);
-                            }
-                            setIsUploading(false);
-                            toast.success("Files uploaded successfully");
-                          }}
-                          onUploadBegin={() => {
-                            setIsUploading(true);
-                          }}
-                          onUploadError={(error) => {
-                            console.error("Upload error:", error);
-                            setIsUploading(false);
-                            toast.error("Failed to upload file");
-                          }}
-                          className="w-full bg-red-500"
+                    {task.bid?.status === "accepted" || task.status !== "open" ? (
+                      <div className="space-y-4">
+                        <Textarea
+                          placeholder="Add a message to the poster about your submission..."
+                          rows={4}
+                          value={submissionMessage}
+                          onChange={(e) => setSubmissionMessage(e.target.value)}
                         />
+                        <div className="bg-muted/50 p-4 rounded-md">
+                          <div className="flex items-center gap-2 text-sm text-muted-foreground mb-2">
+                            <Paperclip className="h-4 w-4" />
+                            <span>Attach files</span>
+                          </div>
+                          
+                          {/* Display uploaded files */}
+                          {uploadedFiles.length > 0 && (
+                            <div className="mb-3 space-y-2">
+                              {uploadedFiles.map((file, index) => (
+                                <div key={index} className="flex items-center justify-between p-2 bg-background rounded border">
+                                  <div className="flex items-center gap-2">
+                                    <FileText className="h-4 w-4 text-blue-500" />
+                                    <span className="text-sm truncate max-w-[200px]">{file.name}</span>
+                                  </div>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm" 
+                                    onClick={() => {
+                                      setUploadedFiles(files => files.filter((_, i) => i !== index));
+                                    }}
+                                  >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M18 6L6 18M6 6l12 12"></path>
+                                    </svg>
+                                  </Button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          
+                          <UploadButton
+                            endpoint="fileSubmissionUploader"
+                            
+                            onClientUploadComplete={(res) => {
+                              if (res && res.length > 0) {
+                                const newFiles = res.map(file => ({
+                                  url: file.url || file.ufsUrl, // Support both properties
+                                  name: file.name || (file.url || file.ufsUrl).split('/').pop() || 'File',
+                                  type: file.type || 'application/octet-stream'
+                                }));
+                                setUploadedFiles(prev => [...prev, ...newFiles]);
+                              }
+                              setIsUploading(false);
+                              toast.success("Files uploaded successfully");
+                            }}
+                            onUploadBegin={() => {
+                              setIsUploading(true);
+                            }}
+                            onUploadError={(error) => {
+                              console.error("Upload error:", error);
+                              setIsUploading(false);
+                              toast.error("Failed to upload file");
+                            }}
+                            className="w-full bg-red-500"
+                          />
+                        </div>
+                        <Button 
+                          onClick={handleSubmitTask} 
+                          className="w-full"
+                          disabled={isSubmitting || isUploading || (!submissionMessage.trim() && uploadedFiles.length === 0)}
+                        >
+                          {isSubmitting ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Submitting...
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle className="mr-2 h-4 w-4" />
+                              {task.submissions.length > 0 ? "Submit Updated Work" : "Submit for Review"}
+                            </>
+                          )}
+                        </Button>
                       </div>
-                      <Button 
-                        onClick={handleSubmitTask} 
-                        className="w-full"
-                        disabled={isSubmitting || isUploading || (!submissionMessage.trim() && uploadedFiles.length === 0)}
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Submitting...
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle className="mr-2 h-4 w-4" />
-                            {task.submissions.length > 0 ? "Submit Updated Work" : "Submit for Review"}
-                          </>
-                        )}
-                      </Button>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <ListChecks className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">Submissions Not Available Yet</h3>
+                        <p className="text-muted-foreground max-w-md">
+                          You will be able to submit work once your bid has been accepted.
+                        </p>
+                      </div>
+                    )}
 
                     {/* Show submission history */}
                     {task.submissions.length > 0 && (
@@ -573,113 +663,127 @@ export default function TaskDetail() {
                   <CardHeader>
                     <CardTitle>Raise a Dispute</CardTitle>
                     <CardDescription>
-                      If you have an issue with this task or payment, please provide details below.
+                      {task.bid?.status === "accepted" || task.status !== "open" 
+                        ? "If you have an issue with this task or payment, please provide details below."
+                        : "You can raise disputes after your bid is accepted"}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
-                    <div className="space-y-4">
-                      <div>
-                        <label htmlFor="dispute-reason" className="text-sm font-medium mb-1 block">
-                          Reason for Dispute
-                        </label>
-                        <Textarea
-                          id="dispute-reason"
-                          placeholder="Describe the issue in detail..."
-                          value={disputeReason}
-                          onChange={(e) => setDisputeReason(e.target.value)}
-                          rows={5}
-                          className="w-full"
-                        />
-                      </div>
-                      
-                      <div>
-                        <label className="text-sm font-medium mb-1 block">
-                          Supporting Evidence (Optional)
-                        </label>
-                        <div className="flex items-center gap-2 mb-2">
-                          <UploadButton
-                            endpoint="evidence"
-                            className="bg-red-500 px-4 rounded-md"
-                            onClientUploadComplete={(res) => {
-                              const newFiles = res.map((file) => ({
-                                url: file.url,
-                                name: file.name,
-                                type: file.type || 'unknown'
-                              }));
-                              setDisputeEvidence([...disputeEvidence, ...newFiles]);
-                              toast.success(`Uploaded ${res.length} file(s) successfully!`);
-                            }}
-                            onUploadError={(error: Error) => {
-                              toast.error(`Error uploading file: ${error.message}`);
-                            }}
-                            onUploadBegin={() => {
-                              toast.info("Upload started...");
-                            }}
-                            config={{ mode: "auto" }}
+                    {task.bid?.status === "accepted" || task.status !== "open" ? (
+                      <div className="space-y-4">
+                        <div>
+                          <label htmlFor="dispute-reason" className="text-sm font-medium mb-1 block">
+                            Reason for Dispute
+                          </label>
+                          <Textarea
+                            id="dispute-reason"
+                            placeholder="Describe the issue in detail..."
+                            value={disputeReason}
+                            onChange={(e) => setDisputeReason(e.target.value)}
+                            rows={5}
+                            className="w-full"
                           />
                         </div>
                         
-                        {disputeEvidence.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-sm font-medium mb-2">Uploaded Files:</p>
-                            <div className="space-y-2">
-                              {disputeEvidence.map((file, index) => (
-                                <div key={index} className="flex items-center gap-2 p-2 border rounded">
-                                  <Paperclip className="h-4 w-4 text-muted-foreground" />
-                                  <span className="text-sm truncate">{file.name}</span>
-                                  <a
-                                    href={file.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="ml-auto text-sm text-blue-500 hover:underline"
-                                  >
-                                    View
-                                  </a>
-                                  <button
-                                    onClick={() => {
-                                      setDisputeEvidence(disputeEvidence.filter((_, i) => i !== index));
-                                    }}
-                                    className="text-red-500 hover:text-red-700"
-                                    type="button"
-                                  >
-                                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                      <path d="M18 6L6 18"></path>
-                                      <path d="M6 6L18 18"></path>
-                                    </svg>
-                                  </button>
-                                </div>
-                              ))}
-                            </div>
+                        <div>
+                          <label className="text-sm font-medium mb-1 block">
+                            Supporting Evidence (Optional)
+                          </label>
+                          <div className="flex items-center gap-2 mb-2">
+                            <UploadButton
+                              endpoint="evidence"
+                              className="bg-red-500 px-4 rounded-md"
+                              onClientUploadComplete={(res) => {
+                                const newFiles = res.map((file) => ({
+                                  url: file.url,
+                                  name: file.name,
+                                  type: file.type || 'unknown'
+                                }));
+                                setDisputeEvidence([...disputeEvidence, ...newFiles]);
+                                toast.success(`Uploaded ${res.length} file(s) successfully!`);
+                              }}
+                              onUploadError={(error: Error) => {
+                                toast.error(`Error uploading file: ${error.message}`);
+                              }}
+                              onUploadBegin={() => {
+                                toast.info("Upload started...");
+                              }}
+                              config={{ mode: "auto" }}
+                            />
                           </div>
-                        )}
+                          
+                          {disputeEvidence.length > 0 && (
+                            <div className="mt-4">
+                              <p className="text-sm font-medium mb-2">Uploaded Files:</p>
+                              <div className="space-y-2">
+                                {disputeEvidence.map((file, index) => (
+                                  <div key={index} className="flex items-center gap-2 p-2 border rounded">
+                                    <Paperclip className="h-4 w-4 text-muted-foreground" />
+                                    <span className="text-sm truncate">{file.name}</span>
+                                    <a
+                                      href={file.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="ml-auto text-sm text-blue-500 hover:underline"
+                                    >
+                                      View
+                                    </a>
+                                    <button
+                                      onClick={() => {
+                                        setDisputeEvidence(disputeEvidence.filter((_, i) => i !== index));
+                                      }}
+                                      className="text-red-500 hover:text-red-700"
+                                      type="button"
+                                    >
+                                      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M18 6L6 18"></path>
+                                        <path d="M6 6L18 18"></path>
+                                      </svg>
+                                    </button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-10 text-center">
+                        <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+                        <h3 className="text-lg font-semibold mb-2">Disputes Not Available Yet</h3>
+                        <p className="text-muted-foreground max-w-md">
+                          You will be able to raise disputes once your bid has been accepted and you've started working on the task.
+                        </p>
+                      </div>
+                    )}
                   </CardContent>
-                  <CardFooter className="flex justify-between">
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        setDisputeReason("");
-                        setDisputeEvidence([]);
-                        setActiveTab("details");
-                      }}
-                    >
-                      Cancel
-                    </Button>
-                    <Button
-                      onClick={handleSubmitDispute}
-                      disabled={isSubmittingDispute || !disputeReason.trim()}
-                    >
-                      {isSubmittingDispute ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        "Submit Dispute"
-                      )}
-                    </Button>
-                  </CardFooter>
+                  {(task.bid?.status === "accepted" || task.status !== "open") && (
+                    <CardFooter className="flex justify-between">
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          setDisputeReason("");
+                          setDisputeEvidence([]);
+                          setActiveTab("details");
+                        }}
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleSubmitDispute}
+                        disabled={isSubmittingDispute || !disputeReason.trim()}
+                      >
+                        {isSubmittingDispute ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Submitting...
+                          </>
+                        ) : (
+                          "Submit Dispute"
+                        )}
+                      </Button>
+                    </CardFooter>
+                  )}
                 </Card>
               </TabsContent>
             </Tabs>
@@ -714,13 +818,13 @@ export default function TaskDetail() {
                   <p className="text-sm font-medium mb-2">Client</p>
                   <div className="flex items-center gap-2">
                     <Avatar className="h-8 w-8">
-                      <AvatarImage src={task.poster.image || undefined} />
-                      <AvatarFallback>{task.poster.name?.charAt(0) || "U"}</AvatarFallback>
+                      <AvatarImage src={task.poster?.image || undefined} />
+                      <AvatarFallback>{task.poster?.name?.charAt(0) || "U"}</AvatarFallback>
                     </Avatar>
                     <div>
-                      <p className="font-medium">{task.poster.name || "Anonymous"}</p>
+                      <p className="font-medium">{task.poster?.name || "Anonymous"}</p>
                       <p className="text-xs text-muted-foreground">
-                        Member since {new Date(task.poster.memberSince).getFullYear()}
+                        Member since {new Date(task.poster?.memberSince || new Date()).getFullYear()}
                       </p>
                     </div>
                   </div>
@@ -768,10 +872,10 @@ export default function TaskDetail() {
                     <p className="text-sm font-medium text-muted-foreground">Bid Amount</p>
                     <div className="flex items-center">
                       <DollarSign className="h-4 w-4 mr-1 text-green-500" />
-                      <span className="font-medium">${task.bid.amount.toFixed(2)}</span>
+                      <span className="font-medium">${task.bid?.amount?.toFixed(2) || '0.00'}</span>
                     </div>
                   </div>
-                  {task.bid.timeframe && (
+                  {task.bid?.timeframe && (
                     <div className="flex justify-between items-center">
                       <p className="text-sm font-medium text-muted-foreground">Timeframe</p>
                       <div className="flex items-center">
@@ -782,20 +886,20 @@ export default function TaskDetail() {
                   )}
                   <div className="pt-2">
                     <p className="text-sm font-medium mb-1">Bid Message</p>
-                    <p className="text-sm">{task.bid.message}</p>
+                    <p className="text-sm">{task.bid?.message || ''}</p>
                   </div>
                   <div className="pt-2 flex items-center justify-between">
                     <p className="text-sm font-medium text-muted-foreground">Status</p>
                     <Badge
                       className={
-                        task.bid.status === "accepted"
+                        task.bid?.status === "accepted"
                           ? "bg-green-500"
-                          : task.bid.status === "rejected"
+                          : task.bid?.status === "rejected"
                           ? "bg-red-500"
                           : "bg-yellow-500"
                       }
                     >
-                      {task.bid.status}
+                      {task.bid?.status || 'pending'}
                     </Badge>
                   </div>
                 </CardContent>
@@ -807,4 +911,3 @@ export default function TaskDetail() {
     </DashboardLayout>
   )
 }
-

@@ -282,9 +282,7 @@ function CreateTaskForm() {
                                     <Label>Deadline</Label>
                                     <DatePicker date={date} setDate={setDate} />
                                 </div>
-                               <h1>Number here</h1>
-                                   <input type = "number"></input>
-                                   <Input  type = "number" />
+                          
                               
 
                                 <div className="space-y-2">

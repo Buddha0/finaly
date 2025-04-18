@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Clock, DollarSign, FileText, MessageSquare } from "lucide-react"
+import { Clock, DollarSign, FileText, MessageSquare, Paperclip } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 
@@ -22,6 +22,8 @@ export interface TaskCardProps {
   messagesCount?: number
   viewType?: "poster" | "doer" | "admin"
   onPlaceBid?: () => void
+  onViewDetails?: () => void
+  attachments?: any
 }
 
 export function TaskCard({
@@ -38,6 +40,8 @@ export function TaskCard({
   messagesCount = 0,
   viewType = "poster",
   onPlaceBid,
+  onViewDetails,
+  attachments,
 }: TaskCardProps) {
   const router = useRouter()
   
@@ -63,23 +67,47 @@ export function TaskCard({
   const isDeadlineSoon = deadlineDate.getTime() - Date.now() < 86400000 * 3 // 3 days
 
   const handleViewDetails = () => {
+    // If a custom handler is provided, use it
+    if (onViewDetails) {
+      console.log("Using custom onViewDetails handler for task ID:", id);
+      onViewDetails();
+      return;
+    }
+    
+    // Otherwise use the default behavior
+    // Ensure we have a valid ID
+    if (!id) {
+      console.error("Task ID is missing");
+      toast.error("Task ID is missing");
+      return;
+    }
+    
+    // Debug the task ID
+    console.log("Task ID in handleViewDetails:", id);
+    console.log("Task ID type:", typeof id);
+    console.log("Task ID length:", id.length);
+    console.log("Task ID characters:", [...id].map(c => `${c} (${c.charCodeAt(0)})`).join(', '));
+    
+    console.log("Viewing task details for task:", id, "viewType:", viewType);
+    
     const route = viewType === "poster" 
       ? `/poster/tasks/${id}` 
       : viewType === "doer" 
         ? `/doer/tasks/${id}` 
-        : `/admin/tasks/${id}`
+        : `/admin/tasks/${id}`;
     
-    router.push(route)
+    console.log("Navigating to route:", route);
+    router.push(route);
     
     const viewAction = viewType === "poster" 
       ? "Viewing your task details" 
       : viewType === "doer" 
         ? `Viewing task from ${posterName || 'poster'}`
-        : "Managing task"
+        : "Managing task";
         
     toast.info(viewAction, {
       description: title
-    })
+    });
   }
 
   const handlePlaceBid = () => {
@@ -124,6 +152,13 @@ export function TaskCard({
           <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
             <MessageSquare className="h-3 w-3" />
             <span>{messagesCount} messages</span>
+          </div>
+        )}
+        
+        {attachments && Array.isArray(attachments) && attachments.length > 0 && (
+          <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+            <Paperclip className="h-3 w-3" />
+            <span>{attachments.length} attachment{attachments.length !== 1 ? 's' : ''}</span>
           </div>
         )}
       </CardContent>

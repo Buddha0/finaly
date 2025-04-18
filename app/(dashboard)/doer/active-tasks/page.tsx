@@ -1,7 +1,7 @@
 "use client"
 
-import { getDoerTasks } from "@/actions/utility/task-utility"
-import { getUserId } from "@/actions/utility/user-utilit"
+import { getActiveTasks } from "@/actions/doer-dashboard"
+import { getUserId } from "@/actions/utility/user-utility"
 import { DashboardLayout } from "@/components/dashboard-layout"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -31,7 +31,7 @@ import { useEffect, useState } from "react"
 interface TaskData {
   id: string;
   title: string;
-  description: string;
+  description?: string;
   category: string;
   budget: number;
   deadline: Date;
@@ -39,15 +39,20 @@ interface TaskData {
   progress?: number;
   doerId?: string | null;
   posterId?: string;
-  createdAt: Date;
-  updatedAt: Date;
+  createdAt?: Date;
+  updatedAt?: Date;
   posterName?: string;
   posterImage?: string | null;
+  poster?: {
+    name: string | null;
+    image: string | null;
+  };
   dateAccepted?: Date;
   dateCompleted?: Date;
-  messagesCount: number;
-  submissionsCount: number;
+  messagesCount?: number;
+  submissionsCount?: number;
   bidsCount?: number;
+  hasSubmissions?: boolean;
   attachments?: any;
 }
 
@@ -98,12 +103,12 @@ export default function ActiveTasks() {
         }
         
         // Use the server action to fetch tasks for this user
-        const result = await getDoerTasks(userId);
+        const result = await getActiveTasks(userId);
         
-        if (result.success && result.data) {
-          setTasks(result.data);
+        if (result) {
+          setTasks(result);
         } else {
-          setError(result.error || "Failed to load tasks");
+          setError("Failed to load tasks");
         }
       } catch (err) {
         console.error("Error fetching tasks:", err);
@@ -121,7 +126,7 @@ export default function ActiveTasks() {
     return taskList.filter((task) => {
       const matchesSearch =
         task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        task.description.toLowerCase().includes(searchQuery.toLowerCase())
+        (task.description ? task.description.toLowerCase().includes(searchQuery.toLowerCase()) : false)
       const matchesStatus = statusFilter === "all" || task.status.toLowerCase() === statusFilter
 
       return matchesSearch && matchesStatus
@@ -353,16 +358,23 @@ export default function ActiveTasks() {
                             <span className="text-sm font-medium">Posted by:</span>
                             <div className="flex items-center gap-1">
                               <Avatar className="h-4 w-4">
-                                <AvatarImage src={task.posterImage ?? undefined} />
-                                <AvatarFallback>{task.posterName?.charAt(0) || 'P'}</AvatarFallback>
+                                <AvatarImage src={task.poster?.image ?? undefined} />
+                                <AvatarFallback>{task.poster?.name?.charAt(0) || 'P'}</AvatarFallback>
                               </Avatar>
-                              <span className="text-sm">{task.posterName || 'Client'}</span>
+                              <span className="text-sm">{task.poster?.name || 'Client'}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">Accepted on:</span>
-                            <span className="text-sm">{task.dateAccepted ? formatDate(task.dateAccepted) : formatDate(task.createdAt)}</span>
+                            <span className="text-sm">
+                              {task.dateAccepted 
+                                ? formatDate(task.dateAccepted) 
+                                : (task.createdAt 
+                                  ? formatDate(task.createdAt) 
+                                  : "Not available")
+                              }
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -451,16 +463,23 @@ export default function ActiveTasks() {
                             <span className="text-sm font-medium">Posted by:</span>
                             <div className="flex items-center gap-1">
                               <Avatar className="h-4 w-4">
-                                <AvatarImage src={task.posterImage ?? undefined} />
-                                <AvatarFallback>{task.posterName?.charAt(0) || 'P'}</AvatarFallback>
+                                <AvatarImage src={task.poster?.image ?? undefined} />
+                                <AvatarFallback>{task.poster?.name?.charAt(0) || 'P'}</AvatarFallback>
                               </Avatar>
-                              <span className="text-sm">{task.posterName || 'Client'}</span>
+                              <span className="text-sm">{task.poster?.name || 'Client'}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">Accepted on:</span>
-                            <span className="text-sm">{task.dateAccepted ? formatDate(task.dateAccepted) : formatDate(task.createdAt)}</span>
+                            <span className="text-sm">
+                              {task.dateAccepted 
+                                ? formatDate(task.dateAccepted) 
+                                : (task.createdAt 
+                                  ? formatDate(task.createdAt) 
+                                  : "Not available")
+                              }
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -545,16 +564,23 @@ export default function ActiveTasks() {
                             <span className="text-sm font-medium">Posted by:</span>
                             <div className="flex items-center gap-1">
                               <Avatar className="h-4 w-4">
-                                <AvatarImage src={task.posterImage ?? undefined} />
-                                <AvatarFallback>{task.posterName?.charAt(0) || 'P'}</AvatarFallback>
+                                <AvatarImage src={task.poster?.image ?? undefined} />
+                                <AvatarFallback>{task.poster?.name?.charAt(0) || 'P'}</AvatarFallback>
                               </Avatar>
-                              <span className="text-sm">{task.posterName || 'Client'}</span>
+                              <span className="text-sm">{task.poster?.name || 'Client'}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">
                             <CheckCircle className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm font-medium">Accepted on:</span>
-                            <span className="text-sm">{task.dateAccepted ? formatDate(task.dateAccepted) : formatDate(task.createdAt)}</span>
+                            <span className="text-sm">
+                              {task.dateAccepted 
+                                ? formatDate(task.dateAccepted) 
+                                : (task.createdAt 
+                                  ? formatDate(task.createdAt) 
+                                  : "Not available")
+                              }
+                            </span>
                           </div>
                           <div className="flex items-center gap-2">
                             <MessageSquare className="h-4 w-4 text-muted-foreground" />
@@ -631,10 +657,10 @@ export default function ActiveTasks() {
                             <span className="text-sm font-medium">Posted by:</span>
                             <div className="flex items-center gap-1">
                               <Avatar className="h-4 w-4">
-                                <AvatarImage src={task.posterImage ?? undefined} />
-                                <AvatarFallback>{task.posterName?.charAt(0) || 'P'}</AvatarFallback>
+                                <AvatarImage src={task.poster?.image ?? undefined} />
+                                <AvatarFallback>{task.poster?.name?.charAt(0) || 'P'}</AvatarFallback>
                               </Avatar>
-                              <span className="text-sm">{task.posterName || 'Client'}</span>
+                              <span className="text-sm">{task.poster?.name || 'Client'}</span>
                             </div>
                           </div>
                           <div className="flex items-center gap-2">

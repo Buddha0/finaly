@@ -29,7 +29,8 @@ import {
   MessageSquare,
   Search,
   ShieldCheck,
-  ThumbsUp
+  ThumbsUp,
+  Gavel
 } from "lucide-react"
 import { useRouter } from "next/navigation"
 import { useEffect, useState, useRef } from "react"
@@ -124,6 +125,11 @@ const navItems = [
     href: "/doer/bids",
     label: "My Bids",
     icon: Briefcase,
+  },
+  {
+    href: "/doer/disputes",
+    label: "Disputes",
+    icon: Gavel,
   },
   {
     href: "/doer/verification",
@@ -327,10 +333,13 @@ export default function DoerDashboard() {
   }
 
   return (
-    <DashboardLayout navItems={navItems} userRole="doer" userName={user?.fullName || "User"}>
+    <DashboardLayout navItems={navItems} userRole="doer" userName={user?.fullName || ""}>
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+          <div className="flex items-center gap-3">
+            <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
+            <Badge variant="outline" className="bg-blue-100 text-blue-800 text-sm font-medium">You are a Doer</Badge>
+          </div>
           <Button onClick={handleFindTasks}>
             <Search className="mr-2 h-4 w-4" />
             Find Tasks

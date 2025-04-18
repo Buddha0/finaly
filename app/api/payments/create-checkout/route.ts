@@ -1,4 +1,3 @@
-import { createCheckoutSession } from '@/app/lib/stripe';
 import prisma from '@/lib/db';
 import { auth } from '@clerk/nextjs/server';
 import { NextResponse } from 'next/server';
@@ -9,20 +8,20 @@ export async function POST(req: Request) {
     if (!userId) {
       console.error('Unauthorized checkout attempt - no user ID');
       return NextResponse.json(
-        { error: 'Unauthorized' }, 
+        { error: 'Unauthorized' },
         { status: 401 }
       );
     }
 
     const body = await req.json();
     console.log('Checkout request body:', body);
-    
+
     const { taskId, bidId } = body;
 
     if (!taskId || !bidId) {
       console.error('Missing required fields in checkout request:', { taskId, bidId });
       return NextResponse.json(
-        { error: 'Task ID and Bid ID are required' }, 
+        { error: 'Task ID and Bid ID are required' },
         { status: 400 }
       );
     }
@@ -39,27 +38,27 @@ export async function POST(req: Request) {
     if (!bid) {
       console.error('Bid not found:', bidId);
       return NextResponse.json(
-        { error: 'Bid not found' }, 
+        { error: 'Bid not found' },
         { status: 404 }
       );
     }
 
     // Verify the user is the task poster
     if (bid.assignment.posterId !== userId) {
-      console.error('Unauthorized checkout attempt - user is not the poster:', 
-                   { userId, posterId: bid.assignment.posterId });
+      console.error('Unauthorized checkout attempt - user is not the poster:',
+        { userId, posterId: bid.assignment.posterId });
       return NextResponse.json(
-        { error: 'Only the task poster can process payment' }, 
+        { error: 'Only the task poster can process payment' },
         { status: 403 }
       );
     }
-    
+
     // Verify the task is still in OPEN status
     if (bid.assignment.status !== 'OPEN') {
-      console.error('Cannot accept bid - task is not open:', 
-                   { taskId, currentStatus: bid.assignment.status });
+      console.error('Cannot accept bid - task is not open:',
+        { taskId, currentStatus: bid.assignment.status });
       return NextResponse.json(
-        { error: 'This task is no longer available for payment' }, 
+        { error: 'This task is no longer available for payment' },
         { status: 400 }
       );
     }
@@ -68,52 +67,34 @@ export async function POST(req: Request) {
     const existingPayment = await prisma.payment.findUnique({
       where: { assignmentId: taskId },
     });
-    
+
     if (existingPayment) {
-      console.error('Payment already exists for this task:', 
-                   { taskId, paymentId: existingPayment.id, status: existingPayment.status });
+      console.error('Payment already exists for this task:',
+        { taskId, paymentId: existingPayment.id, status: existingPayment.status });
       return NextResponse.json(
-        { error: 'Payment already exists for this task' }, 
+        { error: 'Payment already exists for this task' },
         { status: 400 }
       );
     }
 
-    // Create Stripe checkout session
-    const { url, sessionId } = await createCheckoutSession({
-      taskId,
-      amount: bid.bidAmount,
-      userId,
-      bidId,
-      doerId: bid.userId,
-    });
-
-    console.log('Creating payment record in database', {
-      taskId,
-      bidId,
-      sessionId,
-      amount: bid.bidAmount
-    });
-    
-    // Create a payment record in the database with PENDING status
+    // TODO: Integrate eSewa payment session creation here
     const payment = await prisma.payment.create({
       data: {
         amount: bid.bidAmount,
         status: 'PENDING',
-        stripePaymentId: sessionId,
         assignmentId: taskId,
         senderId: userId,
         receiverId: bid.userId,
       },
     });
-    
     console.log('Payment record created', { paymentId: payment.id });
 
-    return NextResponse.json({ url, sessionId });
+    return NextResponse.json({ success: true, paymentId: payment.id });
   } catch (error) {
     console.error('Error creating checkout session:', error);
     return NextResponse.json(
-      { error: 'Failed to create checkout session' }, 
+      { error: 'Failed to create checkout session' },
       { status: 500 }
     );
   }
-} 
+}

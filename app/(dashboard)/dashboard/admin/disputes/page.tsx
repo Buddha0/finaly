@@ -64,21 +64,37 @@ export default function DisputesPage() {
   const { user } = useUser()
   const [disputes, setDisputes] = useState<Dispute[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState("all")
+  const [debugData, setDebugData] = useState<any>(null)
+  const [showDebug, setShowDebug] = useState(false)
+  const [forceMode, setForceMode] = useState(false)
 
   useEffect(() => {
     async function loadDisputes() {
       try {
         setLoading(true)
-        const result = await getAllDisputes()
+        setError(null)
+        
+        console.log(`Fetching disputes (force mode: ${forceMode})...`)
+        const result = await getAllDisputes(forceMode)
         
         if (result.success && result.data) {
+          console.log("Disputes fetched successfully:", result.data)
+          
+          if (result.data.length === 0) {
+            console.log("Warning: No disputes returned from the database")
+          }
+          
           setDisputes(result.data)
         } else {
-          toast.error("Failed to load disputes")
+          console.error("Failed to load disputes:", result.error)
+          setError(result.error || "Failed to load disputes")
+          toast.error("Failed to load disputes: " + (result.error || "Unknown error"))
         }
       } catch (error) {
         console.error("Error loading disputes:", error)
+        setError("An unexpected error occurred")
         toast.error("An error occurred while loading disputes")
       } finally {
         setLoading(false)
@@ -86,7 +102,63 @@ export default function DisputesPage() {
     }
 
     loadDisputes()
-  }, [])
+  }, [forceMode])
+
+  // Debug function
+  const handleDebug = async () => {
+    try {
+      const response = await fetch('/api/admin/debug/disputes');
+      const result = await response.json();
+      
+      if (result.success) {
+        setDebugData(result.data);
+        setShowDebug(true);
+        console.log("Debug data:", result.data);
+      } else {
+        toast.error("Debug failed: " + result.error);
+      }
+    } catch (error) {
+      console.error("Debug error:", error);
+      toast.error("Failed to fetch debug data");
+    }
+  };
+
+  // Add this new function after the handleDebug function
+  const handleFixIssues = async () => {
+    try {
+      if (!confirm("This will attempt to fix issues with dispute data. Continue?")) {
+        return;
+      }
+      
+      toast.info("Fixing dispute data issues...");
+      
+      const response = await fetch('/api/admin/debug/fix-disputes', {
+        method: 'POST',
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success("Dispute data fixed. Reloading...");
+        console.log("Fix results:", result);
+        
+        // Reload the disputes data
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } else {
+        toast.error("Fix failed: " + result.error);
+      }
+    } catch (error) {
+      console.error("Fix error:", error);
+      toast.error("Failed to fix dispute data");
+    }
+  };
+
+  const handleForceLoad = () => {
+    setForceMode(true);
+    toast.info("Loading all disputes without filtering...");
+  };
 
   const getStatusBadge = (status: string) => {
     switch (status) {
@@ -115,7 +187,72 @@ export default function DisputesPage() {
       <div className="flex flex-col gap-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold tracking-tight">Dispute Management</h1>
+          <div className="flex gap-2">
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleForceLoad} 
+              className={forceMode ? "bg-yellow-100" : ""}
+            >
+              Force Load All
+            </Button>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={handleDebug}
+            >
+              Debug
+            </Button>
+          </div>
         </div>
+
+        {showDebug && debugData && (
+          <Card className="mb-4">
+            <CardHeader>
+              <CardTitle className="flex justify-between">
+                <span>Debug Information</span>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    onClick={handleFixIssues}
+                  >
+                    Fix Issues
+                  </Button>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    onClick={() => setShowDebug(false)}
+                  >
+                    Close
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Raw Disputes: {debugData.disputes?.length || 0}</h3>
+                  <pre className="bg-slate-100 p-2 rounded text-xs overflow-auto max-h-32">
+                    {JSON.stringify(debugData.disputes, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Related Payments: {debugData.payments?.length || 0}</h3>
+                  <pre className="bg-slate-100 p-2 rounded text-xs overflow-auto max-h-32">
+                    {JSON.stringify(debugData.payments, null, 2)}
+                  </pre>
+                </div>
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Related Assignments: {debugData.assignments?.length || 0}</h3>
+                  <pre className="bg-slate-100 p-2 rounded text-xs overflow-auto max-h-32">
+                    {JSON.stringify(debugData.assignments, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Tabs defaultValue={activeTab} onValueChange={setActiveTab}>
           <TabsList>
@@ -140,6 +277,20 @@ export default function DisputesPage() {
                 {loading ? (
                   <div className="flex items-center justify-center py-10">
                     <div className="animate-spin h-8 w-8 border-4 border-blue-500 rounded-full border-t-transparent"></div>
+                  </div>
+                ) : error ? (
+                  <div className="flex flex-col items-center justify-center py-10 text-center">
+                    <FileWarning className="h-12 w-12 text-red-500 mb-3" />
+                    <h3 className="text-lg font-medium">Error Loading Disputes</h3>
+                    <p className="text-muted-foreground mt-1">
+                      {error}
+                    </p>
+                    <Button 
+                      className="mt-4" 
+                      onClick={() => window.location.reload()}
+                    >
+                      Try Again
+                    </Button>
                   </div>
                 ) : filteredDisputes.length === 0 ? (
                   <div className="flex flex-col items-center justify-center py-10 text-center">

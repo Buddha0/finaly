@@ -1,6 +1,6 @@
 generator client {
   provider = "prisma-client-js"
-  // output   = "./../prisma/generated/client"
+  output   = "../node_modules/.prisma/client"
 }
 
 // prisma/schema.prisma
@@ -23,6 +23,7 @@ enum AssignmentStatus {
   UNDER_REVIEW
   COMPLETED
   CANCELLED
+  IN_DISPUTE
 }
 
 enum PaymentStatus {
@@ -53,8 +54,6 @@ model User {
   verificationStatus     String?  @default("pending") // pending, verified, rejected
   rejectionReason        String?  @db.Text // Stores the reason why verification was rejected
   accountBalance         Float    @default(0)
-  stripeConnectAccountId String?  // Stripe Connect Express account ID
-  stripeAccountVerified  Boolean? @default(false) // Whether the Stripe account is verified
   clerkId                String?  // Clerk.dev user ID for auth
   createdAt              DateTime @default(now())
   updatedAt              DateTime @updatedAt
@@ -69,7 +68,7 @@ model User {
   messages            Message[]       @relation("SentMessages")
   receivedMessages    Message[]       @relation("ReceivedMessages")
   
-  // New payment relationships
+  // Payment relationships
   sentPayments        Payment[]       @relation("SentPayments")
   receivedPayments    Payment[]       @relation("ReceivedPayments")
   disputes            Dispute[]       @relation("InitiatedDisputes")
@@ -95,15 +94,14 @@ model Assignment {
   doerId              String?
   doer                User?            @relation("AcceptedAssignments", fields: [doerId], references: [id])
   
-  // Stripe and bid related fields
-  stripePaymentIntentId String?        // Stripe payment intent ID
+  // Bid related fields
   acceptedBidId         String?        // ID of the accepted bid
   
   submissions         Submission[]
   bids                Bid[]
   reviews             Review[]
   messages            Message[]
-  payment             Payment?         // New one-to-one relation with Payment
+  payment             Payment?         // One-to-one relation with Payment
   disputes            Dispute[]
   
   createdAt           DateTime         @default(now())
@@ -204,26 +202,29 @@ model Message {
 }
 
 model Payment {
-  id              String        @id @default(cuid())
-  amount          Float
-  status          PaymentStatus @default(PENDING)
-  stripePaymentId String?       // For linking with Stripe payment
-  stripeRefundId  String?       // For tracking refunds
+  id                  String        @id @default(cuid())
+  amount              Float
+  status              PaymentStatus @default(PENDING)
+  
+  // eSewa specific fields
+  esewaTransactionUuid  String?      // Transaction UUID for eSewa
+  esewaRefId            String?      // Reference ID returned by eSewa
+  esewaVerificationJson Json?        // Store full verification response
   
   // Relationships
-  assignmentId    String        @unique // One-to-one with Assignment
-  assignment      Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
+  assignmentId        String        @unique // One-to-one with Assignment
+  assignment          Assignment    @relation(fields: [assignmentId], references: [id], onDelete: Cascade)
   
-  senderId        String        // Poster
-  sender          User          @relation("SentPayments", fields: [senderId], references: [id])
+  senderId            String        // Poster
+  sender              User          @relation("SentPayments", fields: [senderId], references: [id])
   
-  receiverId      String        // Doer
-  receiver        User          @relation("ReceivedPayments", fields: [receiverId], references: [id])
+  receiverId          String        // Doer
+  receiver            User          @relation("ReceivedPayments", fields: [receiverId], references: [id])
   
-  dispute         Dispute?      // Optional relation to dispute
+  dispute             Dispute?      // Optional relation to dispute
   
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   @@index([assignmentId])
   @@index([senderId])
@@ -236,6 +237,11 @@ model Dispute {
   evidence        Json?         // Store links to evidence files
   status          DisputeStatus @default(OPEN)
   resolution      String?       @db.Text // Admin's resolution notes
+  
+  // Response from the other party
+  response        String?       @db.Text // The response from the other party
+  responseEvidence Json?        // Evidence provided in response
+  hasResponse     Boolean       @default(false) // Flag to track if the other party has responded
   
   // Relationships
   assignmentId    String
